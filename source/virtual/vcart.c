@@ -2,13 +2,14 @@
 #include "gamecart.h"
 
 #define FAT_LIMIT   0x100000000
+#define VFLAG_SAVEGAME  (1UL<<30)
 #define VFLAG_PRIV_HDR  (1UL<<31)
 
 static CartData* cdata = (CartData*) VCART_BUFFER; // 128kB reserved (~64kB required)
 static bool cart_init = false;
 
 u32 InitVCartDrive(void) {
-    cart_init = ((InitCardRead(cdata) == 0) && (cdata->cart_size <= FAT_LIMIT));
+    cart_init = ((InitCartRead(cdata) == 0) && (cdata->cart_size <= FAT_LIMIT));
     return cart_init ? cdata->cart_id : 0;
 }
 
@@ -23,7 +24,7 @@ bool ReadVCartDir(VirtualFile* vfile, VirtualDir* vdir) {
     memset(vfile, 0, sizeof(VirtualFile));
     vfile->keyslot = 0xFF; // unused
         
-    while (++vdir->index <= 5) {
+    while (++vdir->index <= 6) {
         if ((vdir->index == 0) && (cdata->data_size < FAT_LIMIT)) { // standard full rom
             snprintf(vfile->name, 32, "%s.%s", name, ext);
             vfile->size = cdata->cart_size;
@@ -47,6 +48,11 @@ bool ReadVCartDir(VirtualFile* vfile, VirtualDir* vdir) {
             vfile->size = PRIV_HDR_SIZE;
             vfile->flags = VFLAG_PRIV_HDR;
             return true;
+        } else if ((vdir->index == 6) && (cdata->save_size > 0)) { // savegame
+            snprintf(vfile->name, 32, "%s.sav", name);
+            vfile->size = cdata->save_size;
+            vfile->flags = VFLAG_SAVEGAME;
+            return true;
         }
     }
     
@@ -57,6 +63,8 @@ int ReadVCartFile(const VirtualFile* vfile, u8* buffer, u64 offset, u64 count) {
     u32 foffset = vfile->offset + offset;
     if (vfile->flags & VFLAG_PRIV_HDR)
         return ReadCartPrivateHeader(buffer, foffset, count, cdata);
+    else if (vfile->flags & VFLAG_SAVEGAME)
+        return ReadCartSave(buffer, foffset, count, cdata);
     else return ReadCartBytes(buffer, foffset, count, cdata);
 }
 
