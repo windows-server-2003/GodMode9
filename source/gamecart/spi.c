@@ -62,20 +62,21 @@ void _SPITransferData(void *data, u32 len, FS_CardSpiBaudRate baudRate, bool wri
 		{
 			u32 word = 0;
 			memcpy(&word, (u32 *)data + i, nbBytes);
-			while(!(REG_SPICARDFIFOSTAT & 1));
-			REG_SPICARDFIFOSTAT = word;
+			while(REG_SPICARDFIFOSTAT);
+			REG_SPICARDFIFO = word;
 		}
 		
 		else
 		{
-			while(!(REG_SPICARDFIFOSTAT & 1));
-			u32 word = REG_SPICARDFIFOSTAT;
+			while(!REG_SPICARDFIFOSTAT);
+			u32 word = REG_SPICARDFIFO;
 			memcpy((u32 *)data + i, &word, nbBytes);
 		}
 		
-		while(REG_SPICARDCNT & SPICARD_START_IS_BUSY);
 		len -= nbBytes;
 	}
+    
+	while(REG_SPICARDCNT & SPICARD_START_IS_BUSY);
 } 
 
 int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answerSize, void* data, u32 dataSize)
