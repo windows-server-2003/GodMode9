@@ -49,7 +49,7 @@ typedef enum {
 void _SPITransferData(void *data, u32 len, FS_CardSpiBaudRate baudRate, bool write)
 {
 	REG_SPICARDCNT = (((write) ? 1 : 0) << 13) | (1 << 12) | (u32)baudRate;
-	REG_UNK_AT_0x18 = 6;
+	REG_UNK_AT_0x18 = 0;
 	REG_SPICARDCNT |= SPICARD_START_IS_BUSY; //start
 	
 	u32 wordCount = (len + 3) >> 2;
