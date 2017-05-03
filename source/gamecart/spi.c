@@ -94,6 +94,8 @@ int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answer
 	if(answer != NULL) _SPITransferData(answer, answerSize, BAUDRATE_4MHZ, false);
 	if(data != NULL) _SPITransferData(data, dataSize, BAUDRATE_4MHZ, true);
 	
+	REG_SPICARDASSERT = 0;
+	
 	return 0;
 }
 
