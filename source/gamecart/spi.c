@@ -25,6 +25,7 @@
 #define CFG_CARDCONF		*(vu16 *)0x1000000C
 
 #define REG_SPICARDCNT		*(vu32 *)0x1000D800
+#define REG_SPICARDASSERT	*(vu32 *)0x1000D804
 #define REG_SPICARDSIZE		*(vu32 *)0x1000D808
 #define REG_SPICARDFIFO		*(vu32 *)0x1000D80C
 #define REG_SPICARDFIFOSTAT	*(vu32 *)0x1000D810
@@ -48,6 +49,7 @@ typedef enum {
 
 void _SPITransferData(void *data, u32 len, FS_CardSpiBaudRate baudRate, bool write)
 {
+	REG_SPICARDSIZE = len;
 	REG_SPICARDCNT = (((write) ? 1 : 0) << 13) | (1 << 12) | (u32)baudRate;
 	REG_UNK_AT_0x18 = 0;
 	REG_SPICARDCNT |= SPICARD_START_IS_BUSY; //start
@@ -85,7 +87,7 @@ int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answer
 	
 	CFG_CARDCONF |= 0x100; //wake card
 	
-    u32 zero = 0;
+	u32 zero = 0;
 	if(infra) _SPITransferData(&zero, 1, BAUDRATE_1MHZ, true); //header
 	
 	if(cmd != NULL) _SPITransferData(cmd, cmdSize, BAUDRATE_4MHZ, true);
