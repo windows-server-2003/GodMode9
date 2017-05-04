@@ -50,7 +50,7 @@ typedef enum {
 void _SPITransferData(void *data, u32 len, FS_CardSpiBaudRate baudRate, bool write)
 {
 	REG_SPICARDSIZE = len;
-	REG_SPICARDCNT = (((write) ? 1 : 0) << 13) | (1 << 12) | (u32)baudRate;
+	REG_SPICARDCNT = (((write) ? 1 : 0) << 13) | (0 << 12) | (u32)baudRate;
 	REG_UNK_AT_0x18 = 0;
 	REG_SPICARDCNT |= SPICARD_START_IS_BUSY; //start
 	
@@ -86,7 +86,7 @@ int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answer
 	bool infra = type == FLASH_512KB_INFRARED || type == FLASH_256KB_INFRARED;
 	
 	CFG_CARDCONF |= 0x100; //wake card
-	
+    
 	u32 zero = 0;
 	if(infra) _SPITransferData(&zero, 1, BAUDRATE_1MHZ, true); //header
 	
