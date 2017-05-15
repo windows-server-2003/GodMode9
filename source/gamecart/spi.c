@@ -22,14 +22,14 @@
 
 // u8* fill_buf = NULL;
 
-#define CFG_CARDCONF		*(vu16 *)0x1000000C
+#define CFG_CARDCONF		(*(vu16 *)0x1000000C)
 
-#define REG_SPICARDCNT		*(vu32 *)0x1000D800
-#define REG_SPICARDASSERT	*(vu32 *)0x1000D804
-#define REG_SPICARDSIZE		*(vu32 *)0x1000D808
-#define REG_SPICARDFIFO		*(vu32 *)0x1000D80C
-#define REG_SPICARDFIFOSTAT	*(vu32 *)0x1000D810
-#define REG_UNK_AT_0x18		*(vu32 *)0x1000D818
+#define REG_SPICARDCNT		(*(vu32 *)0x1000D800)
+#define REG_SPICARDASSERT	(*(vu32 *)0x1000D804)
+#define REG_SPICARDSIZE		(*(vu32 *)0x1000D808)
+#define REG_SPICARDFIFO		(*(vu32 *)0x1000D80C)
+#define REG_SPICARDFIFOSTAT	(*(vu32 *)0x1000D810)
+#define REG_UNK_AT_0x18		(*(vu32 *)0x1000D818)
 
 #define SPICARD_START_IS_BUSY	0x8000
 
@@ -100,7 +100,7 @@ int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answer
 }
 
 int SPIWaitWriteEnd(CardType type) {
-	u8 cmd = SPI_CMD_RDSR, statusReg = 0;
+	u32 cmd = SPI_CMD_RDSR, statusReg = 0;
 	int res = 0;
 	
 	do{
@@ -112,7 +112,7 @@ int SPIWaitWriteEnd(CardType type) {
 }
 
 int SPIEnableWriting(CardType type) {
-	u8 cmd = SPI_CMD_WREN, statusReg = 0;
+	u32 cmd = SPI_CMD_WREN, statusReg = 0;
 	int res = SPIWriteRead(type, &cmd, 1, NULL, 0, 0, 0);
 
 	if(res || type == EEPROM_512B) return res; // Weird, but works (otherwise we're getting an infinite loop for that chip type).
@@ -127,9 +127,9 @@ int SPIEnableWriting(CardType type) {
 }
 
 int SPIReadJEDECIDAndStatusReg(CardType type, u32* id, u8* statusReg) {
-	u8 cmd = SPI_FLASH_CMD_RDID;
-	u8 reg = 0;
-	u8 idbuf[3] = { 0 };
+	u32 cmd = SPI_FLASH_CMD_RDID;
+	u32 reg = 0;
+	u8 idbuf[4] = { 0 };
 	u32 id_ = 0;
 	int res = SPIWaitWriteEnd(type);
 	if(res) return res;
