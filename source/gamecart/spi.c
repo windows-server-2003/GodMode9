@@ -55,7 +55,7 @@ void _SPITransferData(void *data, u32 len, FS_CardSpiBaudRate baudRate, bool wri
 	REG_SPICARDCNT |= SPICARD_START_IS_BUSY; //start
 	
 	u32 wordCount = (len + 3) >> 2;
-	
+	u32 len_was = len;
 	for(u32 i = 0; i < wordCount; i++)
 	{
 		u32 nbBytes = (len <= 4) ? len : 4;
@@ -78,7 +78,7 @@ void _SPITransferData(void *data, u32 len, FS_CardSpiBaudRate baudRate, bool wri
 		len -= nbBytes;
 	}
     
-	while(REG_SPICARDCNT & SPICARD_START_IS_BUSY);
+	while(REG_SPICARDCNT & SPICARD_START_IS_BUSY) ShowString("Busy, %s %lu", (write) ? "write" : "read", len_was);
 } 
 
 int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answerSize, void* data, u32 dataSize)
@@ -93,7 +93,8 @@ int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answer
 	if(cmd != NULL) _SPITransferData(cmd, cmdSize, BAUDRATE_4MHZ, true);
 	if(answer != NULL) _SPITransferData(answer, answerSize, BAUDRATE_4MHZ, false);
 	if(data != NULL) _SPITransferData(data, dataSize, BAUDRATE_4MHZ, true);
-	
+	if (dataSize) ShowPrompt(false, "Completed: %lu/%lu/%lu", cmdSize, answerSize, dataSize);
+    // else ShowString("Completed: %lu/%lu/%lu", cmdSize, answerSize, dataSize);
 	REG_SPICARDASSERT = 0;
 	
 	return 0;
@@ -102,12 +103,12 @@ int SPIWriteRead(CardType type, void* cmd, u32 cmdSize, void* answer, u32 answer
 int SPIWaitWriteEnd(CardType type) {
 	u32 cmd = SPI_CMD_RDSR, statusReg = 0;
 	int res = 0;
-	
+	ShowPrompt(false, "WaitWriteEnd start");
 	do{
 		res = SPIWriteRead(type, &cmd, 1, &statusReg, 1, 0, 0);
 		if(res) return res;
 	} while(statusReg & SPI_FLG_WIP);
-	
+	ShowPrompt(false, "WaitWriteEnd complete");
 	return 0;
 }
 
@@ -416,7 +417,7 @@ int SPIGetCardType(CardType* type, int infrared) {
 		++tries;
 		t = FLASH_INFRARED_DUMMY;
 	}
-	
+	ShowPrompt(false, "JEDECID done");
 	if(t == EEPROM_512B) { *type = t; return 0; }
 	else if(t == EEPROM_STD_DUMMY) {
 		bool mirrored = false;
