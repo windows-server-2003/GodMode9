@@ -2,236 +2,133 @@
 #include "ui.h"
 #include "vff.h"
 #include "fsperm.h"
+#include "zip.h"
 
-u32 ZipExtractContent(const char* path, const char* extrpath, u32 CO, u32* newCO, char* ErrorDesc, u32* flags){
-    /* return is error code
-    0 : successed
-    1x : File Read Error
-        10 : Failed to get compressed size
-        11 : Failed to get original size
-        12 : Failed to get File name length
-        13 : Failed to get Comment length
-        14 : Failed to get File name
-        15 : Failed to get zip version to extract
-        16 : Create new file to extract to failed
-            Maybe file already exists (not possible normally because the parent dir was deleted before)
-        17 : Final Inject (Actual file data) failed
-        18 : The archive does not have enough size to inject data to another file
-    3 : Archive maybe compressed (decided by checking file size of compressed and original one)
-    4 : File name length is more than 256
-    6 : Archive is compressed or encrypted (decided by the version to extract is 2.0 and content name ends with '/')
-    7 : The content is encrypted, compressed or used ZIP64 (decided by checking the version to extract)
-    9 : Cannot create the directory extract path
-    */
-    
-    
-    bool silent = (flags && (*flags & SILENT));
-    u32 ArchiveSize = FileGetSize(path);
-    u32 FileNameLength = 0;  // File name length
-    u32 FileSize = 0;        // FileSize (compressed one)
-    u32 FilSize_org = 0;     // FileSize (original one)
-    u16 FileCommentSize = 0; // Length of comment field
-    u8 ErrorCode= 0;         // temporary error code  (used when error number 3 or 4 occurred)
+
+#define	ZIP_NO_ERRORS            0
+#define	ZIP_USER_ABORT           1
+#define	ZIP_ERROR_FAILED_READ    2
+#define ZIP_ERROR_FAILED_CREATE  3
+#define	ZIP_ERROR_FAILED_INJECT  4
+#define	ZIP_ERROR_ZIP_TOO_SMALL  5
+#define	ZIP_ERROR_NAME_TOO_LONG  6
+#define	ZIP_ERROR_C              7 // compressed
+#define	ZIP_ERROR_CE             8 // compressed or encrypted
+#define	ZIP_ERROR_CE6            9 // compressed or encrypted or used ZIP64
+#define	ZIP_ERROR_UNKNOWN       10
+
+u8 zipExtractContent(const char* path, const char* extrpath, ZipLocalFileHeader hdr, u32 lfh_ptr, u32* flags) {
     u32 FileDataStart_o;     // start offset of adtually data
-    u32 FileDataEnd_o;       // end offset of adtually data
-    u8 ZipVersion = 0;       // zip version to extract
-    u8 ContentType = 0;      // 0 : non-compressed file, 1 = folder
-    memset(ErrorDesc, '\0' , strlen(ErrorDesc));
-    // these 5 variables below here are some path
-    char FileName[256] = ""; // content name (e.g. File : "testdir/testfile.txt" Dir : "testdir/testsubdir") (last slash will be removed in the process)
-    char FileinDir[256] = ""; // the path of dir of content (e.g. File : "testdir" Dir : "testdir")
-    char RealFileName[256] = ""; // the content real name (e.g. File : "testfile.txt" Dir : "testsubdir")
-    char File_extr_f[256] = ""; //  the full path of the file (e.g. File : "0:/extract/testdir/testfile.txt" Dir : "0:/extract/testdir/testsubdir" (but not used))
-    char extrpath_l[256] = ""; // the full path of dir of content or full path of the folder(e.g. File : "0:/extract/testdir" Dir : "0:/extract/testdir/testsubdir")
+    bool isdir;
+    // these variables here are some path
+    char name [256] = { 0 }; // content name (e.g. File : "testdir/testfile.txt" Dir : "testdir/testsubdir") (last slash will be removed in the process)
+    char* real_name;         // the content real name (e.g. File : "testfile.txt" Dir : "testsubdir")
+    char extr_path_full[256] = { 0 }; // the full path of the file (e.g. File : "0:/extract/testdir/testfile.txt" Dir : "0:/extract/testdir/testsubdir" (but not used))
+    char extr_dir_full [256] = { 0 }; // the full path of dir of content or full path of the folder(e.g. File : "0:/extract/testdir" Dir : "0:/extract/testdir/testsubdir")
     
-    // Get size of compressed and original one to check compression
-    // pick compressed one as FileSize to calculate correct newCO(new current offset) on error
-    if (FileGetData(path, &FileSize, 0x04, CO + 0x12) == 0) return 10; //get compressed file size
-    if (FileGetData(path, &FilSize_org, 0x04, CO + 0x16) == 0) return 11; //get original file size
-    if (FileSize != FilSize_org){ // if not compressed, they are same
-        ErrorCode = 3; // do not return and continue to get new current offset
-        snprintf(ErrorDesc, 255, "Error\nCode:3\nCO:0x%lx\n\nThe content is compressed\nCannot extract it", CO);
-    }
+    if (hdr.size_compressed != hdr.size_original) return ZIP_ERROR_C; // if not compressed, they are the same
    
-    
-    // Get File Name Length
-    if (FileGetData(path, &FileNameLength, 0x02, CO + 0x1A) == 0) return 12;
-    if (FileNameLength > 255){ //File Name Length check
-        ErrorCode = 4;
-        snprintf(ErrorDesc, 255, "Error\nCode:4\nCO:0x%lx\n\nContent name too long\nCannot extract it", CO);
-    }
-    
-    // Get comment size
-    if (FileGetData(path, &FileCommentSize, 0x02, CO + 0x1C) == 0) return 13;
-    
-    // ErrorCheck
-    if (ErrorCode != 0){
-        *newCO = CO + 0x1E + FileNameLength + FileCommentSize + FileSize;
-        return ErrorCode;
-    }
-    
     // get file name
-    if (FileGetData(path, FileName, FileNameLength, CO + 0x1E) == 0) return 14;
+    if (hdr.name_len > 255) return ZIP_ERROR_NAME_TOO_LONG; // check file name length
+	if (FileGetData(path, name, hdr.name_len, lfh_ptr + _ZIP_LFH_SIZE) != hdr.name_len) return ZIP_ERROR_FAILED_READ;
+	
+    // get if it is a file (by checking content name end char)
+    char name_last = name[strlen(name)-1]; // last char : '/' means it must be a dir
+    if (name_last == '/') isdir = true;
+	else isdir = false;
     
-    // Get IsFile (by checking content name end charter)
-    char ContentNameLast = FileName[strlen(FileName)-1]; // last char : '/' means it must be be a dir
-    if (ContentNameLast == '/'){ // must be a directory
-        ContentType = 1;
-    }
-    
-    // get zip version to extract
-    // 0x0a Default value : maybe non-compressed file
-    // 0x0b Volume label : not supported
-    // 0x14 Folder or compressed (Deflate) file or encrypted (PKWARE) file
-    // other : encrypted or compressed or ZIP64 and not supported
-    if (FileGetData(path, &ZipVersion, 0x01, CO + 0x04) == 0) return 15;
-    if (ZipVersion == 0x0a){
-        if (ContentType == 1){ // Mismatch (the name ends with '/', but the version to extract says it is file)
-            if (FileSize != 0){ // This means the content maybe a file, so ask user
-                    //↓ if silent, skip asking and handle it as a file because it must be a file
-                if (silent || ShowPrompt(true, "The content maybe a directory,\nbut it maybe also a file.\nHandle as a file? or not\nRecommanded : file")){
-                    ContentType = 0;
-                    FileName[strlen(FileName)-1] = '\0'; // remove '/' at the end of the file name
-                }
-            } // else : must be just a directory and the version to extract is wrong
+    // check zip version
+    if (hdr.version == 0x0a) { // a non-compressed file
+        if (isdir) { // mismatch (the name ends with '/', but the version to extract says it is a file)
+            if (hdr.size_compressed != 0) { // This means the content maybe a file, so handle it as so
+                isdir = false;
+                name[strlen(name)-1] = '\0'; // remove '/' at the end of the file name
+            } // else : must be just a directory and the version is wrong
         }
-    }else if (ZipVersion == 0x14){
-        if (ContentType == 0){
-            // The archive is compressed or encrypted. Can't extract.
-            *newCO = CO + 0x1E + FileNameLength + FileCommentSize + FileSize;
-            snprintf(ErrorDesc, 255, "Error\nCode:6\nCO:0x%lx\n\nThe content is compressed or encrypted\nCannot extract it", CO);
-            return 6;
-        }
-    }else{
-        // The archive is encrypted, compressed or used ZIP64. Can't extract.
-        *newCO = CO + 0x1E + FileNameLength + FileCommentSize + FileSize;
-        snprintf(ErrorDesc, 255, "Error\nCode:7\nCO:0x%lx\n\nThe content is compressed, encrypted or used ZIP64\nCannot extract it", CO);
-        return 7;
-    }
+    } else if (hdr.version == 0x14) { // a dir or a compressed/deflated file
+        if (!isdir) return ZIP_ERROR_CE; // the file is compressed or encrypted, can't extract.
+    } else return ZIP_ERROR_CE6; // the content is encrypted, compressed or used ZIP64, can't extract.
     
-    // get start and end offset of actually data and calculate new CO
-    FileDataStart_o = CO + 0x1E + FileNameLength + FileCommentSize; // comment field will be ignored
-    FileDataEnd_o = FileDataStart_o + FileSize;
-    *newCO = FileDataEnd_o; // File data end is start of next header
+    // get the start offset of actually data
+    FileDataStart_o = lfh_ptr + _ZIP_LFH_SIZE + hdr.name_len + hdr.extra_field_len;
     
     // search for last '/' in content full name
-    int slash_l = -1;
-    for (int count_search = strlen(FileName) - 1; count_search >= 0; count_search--){
-        if (FileName[count_search] == '/'){
-            slash_l = count_search;
-            break;
-        }
-    }
-    if (slash_l == -1){ // no slash
-        snprintf(RealFileName, 256, "%s", FileName);
-        snprintf(extrpath_l, 256, "%s", extrpath);
-    }else{ // slash found
-        strncpy(FileinDir, FileName, slash_l);
-        strncpy(RealFileName, FileName + slash_l + 1, 256);
-        snprintf(extrpath_l, 256, "%s/%s", extrpath, FileinDir);
-    }
+    snprintf(extr_path_full, 256, "%s/%s", extrpath, name);
+    char* slash = strrchr(extr_path_full, '/');
+    if (slash) {
+		real_name = slash+1;
+        strncpy(extr_dir_full, extr_path_full, slash-extr_dir_full-1);
+	} else return ZIP_ERROR_UNKNOWN; // no slash in the full path(impossible)
     
-    snprintf(File_extr_f, 256, "%s/%s", extrpath, FileName);
-    fvx_rmkdir(extrpath_l); // Create Folder (do with both file and folder)
-    if (ContentType == 0){ // if file, create file and inject data
-        if (PathExist(File_extr_f)){ // Path already exists
-            if (*flags & SKIP_ALL){ // skip all
-                return 0;
-            }
-            if (flags && !(*flags & (OVERWRITE_CUR|OVERWRITE_ALL))){ // not overwrite
+	fvx_rmkdir(extr_path_full); // create dir
+    if (!isdir) { // if file, create file and inject the data
+        if (PathExist(extr_path_full)) { // path already exists
+            if (*flags & SKIP_ALL) return ZIP_NO_ERRORS;
+            if (flags && !(*flags & (OVERWRITE_CUR|OVERWRITE_ALL))) { // not overwrite
                 const char* optionstr[5] =
                     {"Choose new name", "Overwrite it", "Skip it", "Overwrite all", "Skip all"};
                 u32 user_select = ShowSelectPrompt(5, optionstr,
-                    "Path already exists:\n%s", File_extr_f);
+                    "Path already exists:\n%s", extr_path_full);
                 if (user_select == 1) {
                     do {
-                        if (!ShowStringPrompt(RealFileName, 255 - (strlen(extrpath_l)), "Choose new destination name")){
-                            return 0; // Abort will be same as "skip all"
+                        if (ShowStringPrompt(real_name, 255 - (strlen(extr_dir_full)), "Choose new destination name")) {
+							snprintf(extr_path_full, 256, "%s/%s", extrpath, real_name); // update path (only used one below here)
                         }
-                        snprintf(File_extr_f, 256, "%s/%s", extrpath_l, RealFileName); // update path (only used one below here)
-                    } while (PathExist(File_extr_f));
+                    } while (PathExist(extr_path_full));
                 } else if (user_select == 2) {
                     *flags |= OVERWRITE_CUR;
                 } else if (user_select == 3) {
-                    return 0;
+                    return ZIP_NO_ERRORS;
                 } else if (user_select == 4) {
                     *flags |= OVERWRITE_ALL;
                 } else if (user_select == 5) {
                     *flags |= SKIP_ALL;
-                    return 0;
+                    return ZIP_NO_ERRORS;
                 } else {
-                    return 20;
+                    return ZIP_USER_ABORT; // user abort
                 }
-            }else if (*flags & (OVERWRITE_CUR)){ // overwrite current but not all
+            }else if (*flags & (OVERWRITE_CUR)) { // overwrite current but not all
                 *flags &= ~OVERWRITE_CUR;
             }
-            PathDelete(File_extr_f);
+            PathDelete(extr_path_full);
         }
         
-        if (!FileCreateDummy(extrpath_l, RealFileName, FileSize)) return 16;
-        if (ArchiveSize < FileDataEnd_o) return 18; // Check archive size to prevent show error in FileInjectFile
-        if (!FileInjectFile(File_extr_f, path, 0, FileDataStart_o, FileSize, NULL)) return 17;
+        if (!FileCreateDummy(extr_dir_full, real_name, hdr.size_original)) return ZIP_ERROR_FAILED_CREATE; // since once deleted the dir, the file shouldn't be exist
+        if (FileGetSize(path) < FileDataStart_o + hdr.size_compressed) return ZIP_ERROR_ZIP_TOO_SMALL; // Check the archive size to prevent show error in FileInjectFile()
+        if (!FileInjectFile(extr_path_full, path, 0, FileDataStart_o, hdr.size_original, NULL)) return ZIP_ERROR_FAILED_INJECT;
     }
-    return 0; // successed
+    return ZIP_NO_ERRORS; // succeed
 }
 
-
-
-
-bool ZipExtract(const char* path, const char* extrpath, u32* flags){
-    
+bool ZipExtract(const char* path, const char* extrpath, u32* flags) {
     bool silent = (flags && (*flags & SILENT));
-    
-    u32 CO = 0; // Cureent offset
-    u32 zipLFHData = 0x4034B50; //Local File Header
-    u32 ErrorCode = 0; // Error code
-    char ErrorDesc[256]; // Error description
-    u32 countContent = 0;
-    u32 countErr = 0;
-    
-    if (!PathExist(path)){
-        if (!silent) ShowPrompt(false, "Error\nCode:0\nArchive does not exist");
-        return false;
-    }
-    
-    
-    u32 Temp = 0;
-    if (FileGetData(path, &Temp, 0x04, 0) == 0) return false;
-    if (Temp != zipLFHData){ // not a zip file
-            if (!silent) ShowPrompt(false, "Error\nCode:5\nHeader incorrect:%lx", Temp);
-            return false;
-    }
-    
-    // make sure there is a directory to extract
-    if (!CheckWritePermissions(extrpath)) return false; // once check here and never check below here
+	ZipLocalFileHeader hdr;
+	u32 lfh_ptr = 0;
+	u32 err_code = 0;
+	
+    // make sure there is a directory to extract(and also check write permissions)
+    if (!CheckDirWritePermissions(extrpath)) return false; // once check here and never check below here
     fvx_rmkdir(extrpath);
-    
-    // Extraction loop
-    while (true){ // Loop ends with file i/o error (means reached the end of the file)
-        countContent++;
-        
-        // Local File Header check
-        if (FileGetData(path, &Temp, 0x04, CO) == 0) return true; // expected read error : it must mean reached the end of the file
-        if (Temp != zipLFHData){ // not a LFH header
-            if (Temp == 0x4b500003){ // data descriptor is used
-                if (!silent) ShowPrompt(false, "Error\nCode:8\nData descriptor is used.\nCannot extract.");
-                return false;
-            }
-            return true;
+	
+	while (true) {
+        // local File Header check
+		if (FileGetData(path, &hdr, _ZIP_LFH_SIZE, lfh_ptr) != _ZIP_LFH_SIZE) return false; // reached the end of the file without End-of-central-dir-header
+		lfh_ptr += (_ZIP_LFH_SIZE + hdr.name_len + hdr.size_compressed + hdr.extra_field_len); // update file pointer
+        if (hdr.signature != _ZIP_LFH_SIG) { // not a LFH
+            if (hdr.signature == _ZIP_DD_SIG) return false; // data descriptor is not supported
+            return true; // reached at the end of LFHs
         }
-        ErrorCode = ZipExtractContent(path, extrpath, CO, &CO, ErrorDesc, flags);
-        if (ErrorCode >= 10 && ErrorCode <= 19){ // Unexpected file read error
-            if (!silent) ShowPrompt(false, "Error\nLoop:%u\nCO:%x\nCode:%u\nFile i/o error", countContent, CO, ErrorCode);
-            return true;
-        }else if (ErrorCode == 20){ // user cancelled
+		
+        err_code = zipExtractContent(path, extrpath, hdr, lfh_ptr, flags);
+        if (err_code == ZIP_ERROR_FAILED_READ) { // unexpected file reading error
+            if (!silent) ShowPrompt(false, "Error\noffset:%x\nFile i/o error", lfh_ptr);
             return false;
-        }else if (ErrorCode != 0){ // continuable error
-            if (!silent){
-                if (!ShowPrompt(true, "%s\n\nContinue to nexu content?", ErrorDesc)) break;
-            }
-            countErr++;
+        }else if (err_code == ZIP_USER_ABORT) { // user abort
+            return false;
+        }else if (err_code != ZIP_NO_ERRORS) { // continuable error
+            if (!silent) {
+				if (!ShowPrompt(true, "Error occurred\n\nContinue to next content?")) return false;
+			}
         }
     }
-    
-    return true;
 }
