@@ -13,6 +13,7 @@
 #include "hid.h"
 #include "ui.h"
 #include "pcx.h"
+#include "zip.h"
 
 
 #define _MAX_ARGS       4
@@ -94,6 +95,7 @@ typedef enum {
     CMD_ID_ENCRYPT,
     CMD_ID_BUILDCIA,
     CMD_ID_EXTRCODE,
+    CMD_ID_UNZIP,
     CMD_ID_BOOT,
     CMD_ID_SWITCHSD,
     CMD_ID_REBOOT,
@@ -151,6 +153,7 @@ Gm9ScriptCmd cmd_list[] = {
     { CMD_ID_ENCRYPT , "encrypt" , 1, 0 },
     { CMD_ID_BUILDCIA, "buildcia", 1, _FLG('l') },
     { CMD_ID_EXTRCODE, "extrcode", 2, 0 },
+    { CMD_ID_UNZIP   , "unzip"   , 2, _FLG('w') | _FLG('k') },
     { CMD_ID_BOOT    , "boot"    , 1, 0 },
     { CMD_ID_SWITCHSD, "switchsd", 1, 0 },
     { CMD_ID_REBOOT  , "reboot"  , 0, 0 },
@@ -1048,6 +1051,14 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
             ret = (ExtractCodeFromCxiFile(argv[0], argv[1], NULL) == 0);
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "extract .code failed");
         }
+    }
+    else if (id == CMD_ID_UNZIP) {
+        u32 flags_ext = BUILD_PATH;
+        if (flags & _FLG('s')) flags_ext |= SILENT;
+        if (flags & _FLG('w')) flags_ext |= OVERWRITE_ALL;
+        if (flags & _FLG('k')) flags_ext |= SKIP_ALL;
+        ret = ZipExtract(argv[0], argv[1], &flags_ext);
+        if (err_str) snprintf(err_str, _ERR_STR_LEN, "extract zip failed");
     }
     else if (id == CMD_ID_BOOT) {
         size_t firm_size = FileGetData(argv[0], TEMP_BUFFER, TEMP_BUFFER_SIZE, 0);
