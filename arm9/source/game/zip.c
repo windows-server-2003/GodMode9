@@ -4,25 +4,12 @@
 #include "fsperm.h"
 #include "zip.h"
 
-
-#define	ZIP_NO_ERRORS            0
-#define	ZIP_USER_ABORT           1
-#define	ZIP_ERROR_FAILED_READ    2
-#define ZIP_ERROR_FAILED_CREATE  3
-#define	ZIP_ERROR_FAILED_INJECT  4
-#define	ZIP_ERROR_ZIP_TOO_SMALL  5
-#define	ZIP_ERROR_NAME_TOO_LONG  6
-#define	ZIP_ERROR_C              7 // compressed
-#define	ZIP_ERROR_CE             8 // compressed or encrypted
-#define	ZIP_ERROR_CE6            9 // compressed or encrypted or used ZIP64
-#define	ZIP_ERROR_UNKNOWN       10
-
 u8 zipExtractContent(const char* path, const char* extrpath, ZipLocalFileHeader hdr, u32 lfh_ptr, u32* flags) {
     u32 FileDataStart_o;     // start offset of adtually data
     bool isdir;
     // these variables here are some path
     char name [256] = { 0 }; // content name (e.g. File : "testdir/testfile.txt" Dir : "testdir/testsubdir") (last slash will be removed in the process)
-    char* real_name;         // the content real name (e.g. File : "testfile.txt" Dir : "testsubdir")
+    char* real_name;         // the real name of the content (e.g. File : "testfile.txt" Dir : "testsubdir")
     char extr_path_full[256] = { 0 }; // the full path of the file (e.g. File : "0:/extract/testdir/testfile.txt" Dir : "0:/extract/testdir/testsubdir" (but not used))
     char extr_dir_full [256] = { 0 }; // the full path of dir of content or full path of the folder(e.g. File : "0:/extract/testdir" Dir : "0:/extract/testdir/testsubdir")
     
