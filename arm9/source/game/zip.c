@@ -82,9 +82,7 @@ u8 zipExtractContent(const char* path, const char* extrpath, ZipLocalFileHeader 
         
         if (!FileCreateDummy(extr_dir_full, real_name, hdr.size_original)) return ZIP_ERROR_FAILED_CREATE; // since once deleted the dir, the file shouldn't be exist
         if (FileGetSize(path) < data_start_off + hdr.size_compressed) return ZIP_ERROR_ZIP_TOO_SMALL; // Check the archive size to prevent show error in FileInjectFile()
-		if (hdr.size_compressed != 0) {
-			if (!FileInjectFile(extr_path_full, path, 0, data_start_off, hdr.size_original, NULL)) return ZIP_ERROR_FAILED_INJECT;
-		}
+        if (!FileInjectFile(extr_path_full, path, 0, data_start_off, hdr.size_original, NULL)) return ZIP_ERROR_FAILED_INJECT;
     }
     return ZIP_NO_ERRORS; // succeed
 }
@@ -114,12 +112,8 @@ bool ZipExtract(const char* path, const char* extrpath, u32* flags) {
         }else if (err_code == ZIP_USER_ABORT) { // user abort
             return false;
         }else if (err_code != ZIP_NO_ERRORS) { // continuable error
-			// debug
-			if (err_code == ZIP_ERROR_FAILED_INJECT) {
-				ShowPrompt(false, "Debug\n \noffset : %lx\nLFH:%lx\n", lfh_ptr, hdr.signature);
-			}
             if (!silent) {
-                if (!ShowPrompt(true, "Error occurred\n\nContinue to next content?\noffset:%lx", lfh_ptr)) return false;
+                if (!ShowPrompt(true, "Error occurred\n\nContinue to next content?\noffset:%llx", lfh_ptr)) return false;
             }
         }
         
