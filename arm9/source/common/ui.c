@@ -14,6 +14,8 @@
 #include "timer.h"
 #include "power.h"
 #include "hid.h"
+#include "godmode.h"
+#include "multithread.h"
 
 #define STRBUF_SIZE 512 // maximum size of the string buffer
 
@@ -810,3 +812,58 @@ bool ShowProgress(u64 current, u64 total, const char* opstr)
     CheckBrightness();
     return !CheckButton(BUTTON_B);
 }
+
+bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
+{
+    static u32 last_prog_width = 0;
+    static u64 timer = 0;
+    const u32 bar_width = SCREEN_WIDTH_MAIN;
+    const u32 bar_height = 5;
+    const u32 bar_pos_x = 0;
+    const u32 bar_pos_y = SCREEN_HEIGHT - bar_height;
+    const u32 text_pos_y = bar_pos_y - FONT_HEIGHT_EXT;
+    u32 prog_width = ((total > 0) && (current <= total)) ? (current * bar_width) / total : 0;
+    u32 prog_percent = ((total > 0) && (current <= total)) ? (current * 100) / total : 0;
+    char tempstr[65];
+    char progstr[256];
+    
+    static u64 last_sec_remain = 0;
+    if (!current) {
+        timer = timer_start();
+        last_sec_remain = 0;
+    }
+    u64 sec_elapsed = (total > 0) ? timer_sec( timer ) : 0;
+    u64 sec_total = (current > 0) ? (sec_elapsed * total) / current : 0;
+    u64 sec_remain = (!last_sec_remain) ? (sec_total - sec_elapsed) : ((last_sec_remain + (sec_total - sec_elapsed) + 1) / 2);
+    if (sec_remain >= 60 * 60) sec_remain = 60 * 60 - 1;
+    last_sec_remain = sec_remain;
+    
+    if (!current || last_prog_width > prog_width)
+        DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, bar_width, bar_height, COLOR_STD_BG);
+
+    DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, prog_width, bar_height, COLOR_STD_FONT);
+    
+    TruncateString(progstr, opstr, (bar_width / FONT_WIDTH_EXT) - 7, 8);
+    snprintf(tempstr, 64, "%s (%lu%%)", progstr, prog_percent);
+    ResizeString(progstr, tempstr, bar_width / FONT_WIDTH_EXT, 8, false);
+    DrawString(MAIN_SCREEN, progstr, bar_pos_x, text_pos_y, COLOR_STD_FONT, COLOR_STD_BG);
+
+	
+    if (sec_elapsed >= 1) {
+        snprintf(tempstr, 16, "ETA %02llum%02llus", sec_remain / 60, sec_remain % 60);
+        ResizeString(progstr, tempstr, 16, 8, true);
+        DrawString(MAIN_SCREEN, progstr, bar_pos_x + bar_width - 1 - (FONT_WIDTH_EXT * 16),
+            bar_pos_y - 10 - 1, COLOR_STD_FONT, COLOR_STD_BG);
+    }
+    last_prog_width = prog_width;
+    
+    CheckBrightness();
+	
+	// Multi threading(handle user input in background)
+	BGInputChecking = true;
+	GM9HandleUserInput();
+	BGInputChecking = false;
+	
+    return true; // currently don't allow cancelling
+}
+

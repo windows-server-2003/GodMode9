@@ -17,6 +17,7 @@
 #include "power.h"
 #include "vram0.h"
 #include "i2c.h"
+#include "multithread.h"
 
 
 #define N_PANES 2
@@ -193,7 +194,7 @@ void DrawTopBar(const char* curr_path) {
 void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pane) {
     const u32 n_cb_show = 8;
     const u32 info_start = (MAIN_SCREEN == TOP_SCREEN) ? 18 : 2; // leave space for the topbar when required
-    const u32 instr_x = (SCREEN_WIDTH_MAIN - (34*FONT_WIDTH_EXT)) / 2;
+    // const u32 instr_x = (SCREEN_WIDTH_MAIN - (34*FONT_WIDTH_EXT)) / 2;
     const u32 len_info = (SCREEN_WIDTH_MAIN - ((SCREEN_WIDTH_MAIN >= 400) ? 80 : 20)) / 2;
     char tempstr[64];
     
@@ -268,6 +269,7 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         "%*s", len_info / FONT_WIDTH_EXT, tempstr);
     
     // bottom: inctruction block
+	/* disabled for a progress bar
     char instr[512];
     snprintf(instr, 512, "%s\n%s%s%s%s%s%s%s%s",
         FLAVOR " " VERSION, // generic start part
@@ -282,6 +284,7 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         (clipboard->n_entries) ? "SELECT - Clear Clipboard\n" : "SELECT - Restore Clipboard\n", // only if clipboard is full
         "START - Reboot / [+R] Poweroff\nHOME button for HOME menu"); // generic end part
     DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr), COLOR_STD_FONT, COLOR_STD_BG, instr);
+	*/
 }
 
 void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
@@ -1746,19 +1749,23 @@ u32 HomeMoreMenu(char* current_path) {
     return HomeMoreMenu(current_path);
 }
 
+const u32 quick_stp = (MAIN_SCREEN == TOP_SCREEN) ? 20 : 19;
+u32 exit_mode = GODMODE_EXIT_POWEROFF;
+
+static char current_path[256] = { 0x00 };
+static u32 cursor = 0;
+static u32 scroll = 0;
+
+static int mark_next = -1;
+static u32 last_clipboard_size = 0;
+static PaneData* pane;
+static DirEntry* curr_entry;
+static int curr_drvtype;
+static u32 last_write_perm;
+    
 u32 GodMode(int entrypoint) {
-    const u32 quick_stp = (MAIN_SCREEN == TOP_SCREEN) ? 20 : 19;
-    u32 exit_mode = GODMODE_EXIT_POWEROFF;
-    
-    char current_path[256] = { 0x00 };
-    PaneData* pane = panedata;
-    u32 cursor = 0;
-    u32 scroll = 0;
-    
-    int mark_next = -1;
-    u32 last_write_perm = GetWritePermissions();
-    u32 last_clipboard_size = 0;
-    
+    pane = panedata;
+    last_write_perm = GetWritePermissions();
     
     bool bootloader = IS_SIGHAX && (entrypoint == ENTRY_NANDBOOT);
     bool bootmenu = bootloader && (BOOTMENU_KEY != BUTTON_START) && CheckButton(BOOTMENU_KEY);
@@ -1777,17 +1784,17 @@ u32 GodMode(int entrypoint) {
     
     // get mode string for splash screen
     const char* disp_mode = NULL;
-	if (bootloader) disp_mode = "bootloader mode\nR+LEFT for menu";
+    if (bootloader) disp_mode = "bootloader mode\nR+LEFT for menu";
     else if (!IS_SIGHAX && (entrypoint == ENTRY_NANDBOOT)) disp_mode = "oldloader mode";
     else if (entrypoint == ENTRY_NTRBOOT) disp_mode = "ntrboot mode";
     else if (entrypoint == ENTRY_UNKNOWN) disp_mode = "unknown mode";
-	
-	bool show_splash = true;
-	#ifdef SALTMODE
+    
+    bool show_splash = true;
+    #ifdef SALTMODE
     show_splash = !bootloader;
     #endif
     
-	// show splash screen (if enabled)
+    // show splash screen (if enabled)
     ClearScreenF(true, true, COLOR_STD_BG);
     if (show_splash) SplashInit(disp_mode);
     u64 timer = timer_start(); // for splash delay
@@ -1881,8 +1888,17 @@ u32 GodMode(int entrypoint) {
     memset(panedata, 0x00, 0x10000);
     ClearScreenF(true, true, COLOR_STD_BG); // clear splash
     
-    while (godmode9) { // this is the main loop
-        int curr_drvtype = DriveType(current_path);
+    while (godmode9) GM9HandleUserInput();
+    
+    // never reached here
+    DeinitExtFS();
+    DeinitSDCardFS();
+    
+    return exit_mode;
+}
+
+u8 GM9HandleUserInput () {
+        curr_drvtype = DriveType(current_path);
         
         // basic sanity checking
         if (!current_dir->n_entries) { // current dir is empty -> revert to root
@@ -1899,7 +1915,7 @@ u32 GodMode(int entrypoint) {
         }
         if (cursor >= current_dir->n_entries) // cursor beyond allowed range
             cursor = current_dir->n_entries - 1;
-        DirEntry* curr_entry = &(current_dir->entry[cursor]);
+        curr_entry = &(current_dir->entry[cursor]);
         if ((mark_next >= 0) && (curr_entry->type != T_DOTDOT)) {
             curr_entry->marked = mark_next;
             mark_next = -2;
@@ -1912,11 +1928,14 @@ u32 GodMode(int entrypoint) {
         if (~last_write_perm & GetWritePermissions()) {
             if (ShowPrompt(true, "Write permissions were changed.\nRelock them?")) SetWritePermissions(last_write_perm, false);
             last_write_perm = GetWritePermissions();
-            continue;
+            return GODMODE_NO_EXIT;
         }
         
+        
         // handle user input
-        u32 pad_state = InputWait(3);
+		u32 pad_state;
+        if (BGInputChecking) pad_state = HID_STATE;
+		else pad_state = InputWait(3);
         bool switched = (pad_state & BUTTON_R1);
         
         // basic navigation commands
@@ -2230,8 +2249,10 @@ u32 GodMode(int entrypoint) {
         }
         
         if (pad_state & BUTTON_START) {
-            exit_mode = (switched || (pad_state & BUTTON_LEFT)) ? GODMODE_EXIT_POWEROFF : GODMODE_EXIT_REBOOT;
-            break;
+			DeinitExtFS();
+			DeinitSDCardFS();
+			if (switched || (pad_state & BUTTON_LEFT)) PowerOff();
+			Reboot();
         } else if (pad_state & (BUTTON_HOME|BUTTON_POWER)) { // Home menu
             const char* optionstr[8];
             const char* buttonstr = (pad_state & BUTTON_HOME) ? "HOME" : "POWER";
@@ -2262,12 +2283,14 @@ u32 GodMode(int entrypoint) {
                 }
             }
             
-            if (user_select == poweroff) { 
-                exit_mode = GODMODE_EXIT_POWEROFF;
-                break;
+            if (user_select == poweroff) {
+				DeinitExtFS();
+				DeinitSDCardFS();
+				PowerOff();
             } else if (user_select == reboot) { 
-                exit_mode = GODMODE_EXIT_REBOOT;
-                break;
+				DeinitExtFS();
+				DeinitSDCardFS();
+                Reboot();
             }
         } else if (pad_state & (CART_INSERT|CART_EJECT)) {
             if (!InitVCartDrive() && (pad_state & CART_INSERT)) // reinit virtual cart drive
@@ -2290,13 +2313,7 @@ u32 GodMode(int entrypoint) {
                 clipboard->n_entries = 0; // remove SD clipboard entries
             GetDirContents(current_dir, current_path);
         }
-    }
-    
-    
-    DeinitExtFS();
-    DeinitSDCardFS();
-    
-    return exit_mode;
+    return GODMODE_NO_EXIT;
 }
 
 #else

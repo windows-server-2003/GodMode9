@@ -42,7 +42,7 @@
 #define DIR_BUFFER_SIZE     (0x100000)
 // buffer area defines (in use by fsutil.c, fsinit.c and gameutil.c)
 #define MAIN_BUFFER         ((u8*)0x20100000)
-#define MAIN_BUFFER_SIZE    (0x100000) // must be multiple of 0x200
+#define MAIN_BUFFER_SIZE    (0x10000) // must be multiple of 0x200
 // buffer area defines (in use by nand.c)
 #define NAND_BUFFER         ((u8*)0x20200000)
 #define NAND_BUFFER_SIZE    (0x100000) // must be multiple of 0x200

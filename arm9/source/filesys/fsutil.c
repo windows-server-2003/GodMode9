@@ -400,7 +400,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move) {
     bool to_virtual = GetVirtualSource(dest);
     bool silent = (flags && (*flags & SILENT));
     bool ret = false;
-    
+	
     // check destination write permission (special paths only)
     if (((*dest == '1') || (strncmp(dest, "0:/Nintendo 3DS", 16) == 0)) &&
         (!flags || !(*flags & OVERRIDE_PERM)) && 
@@ -415,9 +415,9 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move) {
     TruncateString(deststr, dest, 36, 8);
     
     // the copy process takes place here
-    if (!ShowProgress(0, 0, orig) && !(flags && (*flags & NO_CANCEL))) {
+    if (!ShowProgress_mt(0, 0, orig) && !(flags && (*flags & NO_CANCEL))) {
         if (ShowPrompt(true, "%s\nB button detected. Cancel?", deststr)) return false;
-        ShowProgress(0, 0, orig);
+        ShowProgress_mt(0, 0, orig);
     }
     if (move && fvx_stat(dest, NULL) != FR_OK) { // moving if dest not existing
         ret = (fvx_rename(orig, dest) == FR_OK);
@@ -473,7 +473,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move) {
         if (fvx_open(&ofile, orig, FA_READ | FA_OPEN_EXISTING) != FR_OK) {
             if (!FileUnlock(orig) || (fvx_open(&ofile, orig, FA_READ | FA_OPEN_EXISTING) != FR_OK))
                 return false;
-            ShowProgress(0, 0, orig); // reinit progress bar
+            ShowProgress_mt(0, 0, orig); // reinit progress bar
         }
         
         if (fvx_open(&dfile, dest, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
@@ -502,20 +502,21 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move) {
                 (fvx_write(&dfile, MAIN_BUFFER, bytes_read, &bytes_written) != FR_OK) ||
                 (bytes_read != bytes_written))
                 ret = false;
-            if (ret && !ShowProgress(pos + bytes_read, fsize, orig)) {
+            if (ret && !ShowProgress_mt(pos + bytes_read, fsize, orig)) {
                 if (flags && (*flags & NO_CANCEL)) {
                     ShowPrompt(false, "%s\nCancel is not allowed here", deststr);
                 } else ret = !ShowPrompt(true, "%s\nB button detected. Cancel?", deststr);
-                ShowProgress(0, 0, orig);
-                ShowProgress(pos + bytes_read, fsize, orig);
+                ShowProgress_mt(0, 0, orig);
+                ShowProgress_mt(pos + bytes_read, fsize, orig);
             }
             if (flags && (*flags & CALC_SHA))
                 sha_update(MAIN_BUFFER, bytes_read);
         }
-        ShowProgress(1, 1, orig);
+        ShowProgress_mt(1, 1, orig);
         
         fvx_close(&ofile);
         fvx_close(&dfile);
+		
         if (!ret) fvx_unlink(dest);
         else if (!to_virtual && flags && (*flags & CALC_SHA)) {
             u8 sha256[0x20];
@@ -525,7 +526,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move) {
             FileSetData(dest, sha256, 0x20, 0, true);
         }
     }
-    
+	
     return ret;
 }
 
