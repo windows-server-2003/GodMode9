@@ -24,7 +24,7 @@ You may now run GodMode9 via holding the X Button (or any other button you chose
 ## How to build this / developer info
 Build `GodMode9.firm` via `make firm`. This requires [firmtool](https://github.com/TuxSH/firmtool), [Python 3.5+](https://www.python.org/downloads/) and [devkitARM](https://sourceforge.net/projects/devkitpro/) installed).
 
-You may run `make release` to get a nice, release-ready package of all required files. To build __SafeMode9__ (a bricksafe variant of GodMode9, with limited write permissions) instead of GodMode9, compile with `make FLAVOR=SafeMode9`. To switch screens, compile with `make SWITCH_SCREENS=1`. For additional customization, you may choose the internal font via `make FONT=6X10`, `make FONT=ACORN`, `make FONT=GB` or `make FONT=ORIG`. You may also hardcode the brightness via `make FIXED_BRIGHTNESS=x`, whereas `x` is a value between 0...15.
+You may run `make release` to get a nice, release-ready package of all required files. To build __SafeMode9__ (a bricksafe variant of GodMode9, with limited write permissions) instead of GodMode9, compile with `make FLAVOR=SafeMode9`. To switch screens, compile with `make SWITCH_SCREENS=1`. For additional customization, you may choose the internal font by replacing `font.pbm` inside the `data` directory. You may also hardcode the brightness via `make FIXED_BRIGHTNESS=x`, whereas `x` is a value between 0...15.
 
 Further customization is possible by hardcoding `aeskeydb.bin` (just put the file into the `data` folder when compiling). All files put into the `data` folder will turn up in the `V:` drive, but keep in mind there's a hard 3MB limit for all files inside, including overhead. A standalone script runner is compiled by providing `autorun.gm9` (again, in the `data` folder) and building with `make SCRIPT_RUNNER=1`.
 
@@ -74,7 +74,7 @@ GodMode9 provides access to system data via drives, a listing of what each drive
 * __`T: TICKET.DB IMAGE`__: Ticket database files can be mounted and accessed via this drive. This provides easy and quick access to all tickets inside the `ticket.db`. This is read-only.
 * __`M: MEMORY VIRTUAL`__: This provides access to various memory regions. This is protected by a special write permission, and caution is advised when doing modifications inside this drive. This drive also gives access to `boot9.bin`, `boot11.bin` (boot9strap only) and `otp.mem` (sighaxed systems only).
 * __`X: NAND XORPADS`__: This drive contains XORpads for all NAND partitions. XORpads can be used to decrypt NAND partitions outside of the 3DS console with the help of [additional software](https://github.com/d0k3/3DSFAT16tool/releases). This is read-only.
-* __`V: VRAM VIRTUAL`__: This drive resides in the first VRAM bank and contains files essential to GodMode9. The splash logo (in QLZ format) and the readme file are found there, as well as any file that is provided inside the `data` folder at build time. This is read-only.
+* __`V: VRAM VIRTUAL`__: This drive resides in the first VRAM bank and contains files essential to GodMode9. The font (in PBM format), the splash logo (in PCX format) and the readme file are found there, as well as any file that is provided inside the `data` folder at build time. This is read-only.
 * __`Z: LAST SEARCH`__: After a search operation, search results are found inside this drive. The drive can be accessed at a later point to return to the former search results.
 
 
@@ -149,7 +149,7 @@ This tool would not have been possible without the help of numerous people. Than
 * **Archshift**, for providing the base project infrastructure
 * **Normmatt**, for sdmmc.c / sdmmc.h and gamecart code, and for being of great help on countless other occasions
 * **Cha(N)**, **Kane49**, and all other FatFS contributors for [FatFS](http://elm-chan.org/fsw/ff/00index_e.html)
-* **Wolfvak** for ARM11 code, FIRM binary launcher, fexception handlers, PCX code, Makefile and for help on countless other occasions
+* **Wolfvak** for ARM11 code, FIRM binary launcher, exception handlers, PCX code, Makefile and for help on countless other occasions
 * **SciresM** for helping me figure out RomFS and for boot9strap
 * **SciresM**, **Myria**, **Normmatt**, **TuxSH** and **hedgeberg** for figuring out sighax and giving us access to bootrom
 * **ihaveamac** for first developing the simple CIA generation method and for being of great help in porting it

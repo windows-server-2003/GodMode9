@@ -34,9 +34,14 @@
 
 #define _ARG_TRUE       "TRUE"
 #define _ARG_FALSE      "FALSE"
+#define _VAR_FORPATH    "FORPATH"
 
 #define _SKIP_BLOCK     1
 #define _SKIP_TILL_END  2
+#define _SKIP_TO_NEXT   3
+#define _SKIP_TO_FOR    4
+
+#define _MAX_FOR_DEPTH  16
 
 #define VAR_BUFFER      (SCRIPT_BUFFER + SCRIPT_BUFFER_SIZE - VAR_BUFFER_SIZE)
 
@@ -99,6 +104,8 @@ typedef enum {
     CMD_ID_ENCRYPT,
     CMD_ID_BUILDCIA,
     CMD_ID_EXTRCODE,
+    CMD_ID_ISDIR,
+    CMD_ID_EXIST,
     CMD_ID_BOOT,
     CMD_ID_SWITCHSD,
     CMD_ID_REBOOT,
@@ -125,7 +132,7 @@ Gm9ScriptCmd cmd_list[] = {
     { CMD_ID_ELIF    , _CMD_ELIF , 1, 0 },
     { CMD_ID_ELSE    , _CMD_ELSE , 0, 0 },
     { CMD_ID_END     , _CMD_END  , 0, 0 },
-    { CMD_ID_FOR     , _CMD_FOR  , 2, 0 },
+    { CMD_ID_FOR     , _CMD_FOR  , 2, _FLG('r') },
     { CMD_ID_NEXT    , _CMD_NEXT , 0, 0 },
     { CMD_ID_GOTO    , "goto"    , 1, 0 },
     { CMD_ID_LABELSEL, "labelsel", 2, 0 },
@@ -159,6 +166,8 @@ Gm9ScriptCmd cmd_list[] = {
     { CMD_ID_ENCRYPT , "encrypt" , 1, 0 },
     { CMD_ID_BUILDCIA, "buildcia", 1, _FLG('l') },
     { CMD_ID_EXTRCODE, "extrcode", 2, 0 },
+    { CMD_ID_ISDIR,    "isdir"   , 1, 0 },
+    { CMD_ID_EXIST,    "exist"   , 1, 0 },
     { CMD_ID_BOOT    , "boot"    , 1, 0 },
     { CMD_ID_SWITCHSD, "switchsd", 1, 0 },
     { CMD_ID_REBOOT  , "reboot"  , 0, 0 },
@@ -175,6 +184,7 @@ static u32 script_color_code = 0;
 // global vars for control flow
 static bool syntax_error = false;   // if true, severe error, script has to stop
 static char* jump_ptr = NULL;       // next position after a jump
+static char* for_ptr = NULL;        // position of the active 'for' command
 static u32 skip_state = 0;          // zero, _SKIP_BLOCK, _SKIP_TILL_END
 static u32 ifcnt = 0;               // current # of 'if' nesting
 
@@ -432,6 +442,8 @@ bool init_vars(const char* path_script) {
     set_var("HAX", IS_SIGHAX ? (isntrboot() ? "ntrboot" : "sighax") : IS_A9LH ? "a9lh" : ""); // type of hax running from
     set_var("ONTYPE", IS_O3DS ? "O3DS" : "N3DS"); // type of the console
     set_var("RDTYPE", IS_DEVKIT ? "devkit" : "retail"); // devkit / retail
+    char* ptr = set_var("GM9VER", VERSION); // GodMode9 version, truncated below
+    while (*(ptr++) != '\0') if (*ptr == '-') *ptr = '\0';
     upd_var(NULL); // set all dynamic environment vars
     
     return true;
@@ -500,6 +512,7 @@ u32 get_flag(char* str, u32 len, char* err_str) {
     else if (strncmp(str, "--legit", len) == 0) flag_char = 'l';
     else if (strncmp(str, "--no_cancel", len) == 0) flag_char = 'n';
     else if (strncmp(str, "--optional", len) == 0) flag_char = 'o';
+    else if (strncmp(str, "--recursive", len) == 0) flag_char = 'r';
     else if (strncmp(str, "--silent", len) == 0) flag_char = 's';
     else if (strncmp(str, "--unequal", len) == 0) flag_char = 'u';
     else if (strncmp(str, "--overwrite", len) == 0) flag_char = 'w';
@@ -581,6 +594,39 @@ char* skip_block(char* ptr, bool ignore_else, bool stop_after_end) {
     return NULL;
 }
 
+char* find_next(char* ptr) {
+    while (ptr && *ptr) {
+        // store line start / line end
+        char* line_start = ptr;
+        char* line_end = strchr(ptr, '\n');
+        if (!line_end) line_end = ptr + strlen(ptr);
+        
+        // grab first string
+        char* str = NULL;
+        u32 str_len = 0;
+        if (!(str = get_string(ptr, line_end, &str_len, &ptr, NULL)) || (str >= line_end)) {
+            // string error or empty line
+            ptr = line_end + 1;
+            continue; 
+        }
+        
+        // check string
+        if (MATCH_STR(str, str_len, _CMD_IF)) { // skip 'if' blocks
+            ptr = skip_block(ptr, true, true);
+        } else if (MATCH_STR(str, str_len, _CMD_END) || MATCH_STR(str, str_len, _CMD_FOR)) {
+            ptr = NULL; // this should not happen here
+        } else if (MATCH_STR(str, str_len, _CMD_NEXT)) {
+            return line_start;
+        }
+        
+        // move on to the next line
+        ptr = line_end + 1;
+    }
+    
+    // 'next' not found
+    return NULL;
+}
+
 char* find_label(const char* label, const char* last_found) {
     char* script = (char*) SCRIPT_BUFFER; // equals global, not a good solution
     char* ptr = script;
@@ -622,10 +668,54 @@ char* find_label(const char* label, const char* last_found) {
             return line_start; // match found
         } else if (MATCH_STR(str, str_len, _CMD_IF)) {
             next = skip_block(line_start, true, true);
+        } else if (MATCH_STR(str, str_len, _CMD_FOR)) {
+            next = find_next(line_start);
         } // otherwise: irrelevant line
     }
     
     return NULL;
+}
+
+bool for_handler(char* path, const char* dir, const char* pattern, bool recursive) {
+    static DIR fdir[_MAX_FOR_DEPTH];
+    static DIR* dp = NULL;
+    static char ldir[256];
+    static char lpattern[64];
+    static bool rec = false;
+    
+    if (!path && !dir && !pattern) { // close all dirs
+        while (dp >= fdir) fvx_closedir(dp--);
+        dp = NULL;
+        return true;
+    }
+    
+    if (dir) { // open a dir
+        snprintf(lpattern, 64, pattern);
+        snprintf(ldir, 256, dir);
+        if (dp) return false; // <- this should never happen
+        if (fvx_opendir(&fdir[0], dir) != FR_OK)
+            return false;
+        dp = &fdir[0];
+        rec = recursive;
+    } else if (dp) { // traverse dir
+        FILINFO fno;
+        while ((fvx_preaddir(dp, &fno, lpattern) != FR_OK) || !*(fno.fname)) {
+            *path = '\0';
+            if (dp == fdir) return true;
+            fvx_closedir(dp--);
+            char* slash = strrchr(ldir, '/');
+            if (!slash) return false;
+            *slash = '\0';
+        }
+        
+        snprintf(path, 256, "%s/%.254s", ldir, fno.fname);
+        if (rec && (fno.fattrib & AM_DIR) && (dp - fdir < _MAX_FOR_DEPTH - 1)) {
+            if (fvx_opendir(++dp, path) != FR_OK) dp--;
+            else strncpy(ldir, path, 255);
+        }
+    } else return false;
+    
+    return true;
 }
 
 bool parse_line(const char* line_start, const char* line_end, cmd_id* cmdid, u32* flags, u32* argc, char** argv, char* err_str) {
@@ -754,6 +844,45 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         ifcnt--;
         
         ret = true;
+    }
+    else if (id == CMD_ID_FOR) {
+        // cheating alert(!): actually this does nothing much
+        // just sets up the for_handler and skips to 'next'
+        if (for_ptr) {
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "'for' inside 'for'");
+            syntax_error = true;
+            return false;
+        } else if (!for_handler(NULL, argv[0], argv[1], flags & _FLG('r'))) {
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "dir not found");
+            skip_state = _SKIP_TO_NEXT;
+            ret = false;
+        } else {
+            skip_state = _SKIP_TO_NEXT;
+            ret = true;
+        }
+    }
+    else if (id == CMD_ID_NEXT) {
+        // actual work is done here
+        char* var = set_var(_VAR_FORPATH, "");
+        ret = true;
+        if (!for_ptr) {
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "'next' without 'for'");
+            syntax_error = true;
+            return false;
+        } else if (!var) {
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "forpath error");
+            ret = false;
+        } else {
+            if (!for_handler(var, NULL, NULL, false)) *var = '\0';
+            if (!*var) {
+                for_handler(NULL, NULL, NULL, false); // finish for_handler
+                for_ptr = NULL;
+                skip_state = 0;
+            } else {
+                skip_state = _SKIP_TO_FOR;
+            }
+            ret = true;
+        }
     }
     else if (id == CMD_ID_GOTO) {
         jump_ptr = find_label(argv[0], NULL);
@@ -1063,6 +1192,24 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "extract .code failed");
         }
     }
+    else if (id == CMD_ID_ISDIR) {
+        DIR fdir;
+        if (fvx_opendir(&fdir, argv[0]) == FR_OK) {
+            fvx_closedir(&fdir);
+            ret = true;
+        } else {
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "not a dir");
+            ret = false;
+        }
+    }
+    else if (id == CMD_ID_EXIST) {
+        if (fvx_stat(argv[0], NULL) == FR_OK) {
+            ret = true;
+        } else {
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "file not found");
+            ret = false;
+        }
+    }
     else if (id == CMD_ID_BOOT) {
         size_t firm_size = FileGetData(argv[0], TEMP_BUFFER, TEMP_BUFFER_SIZE, 0);
         ret = firm_size && IsBootableFirm(TEMP_BUFFER, firm_size);
@@ -1215,7 +1362,7 @@ void MemTextView(const char* text, u32 len, char* line0, int off_disp, int lno, 
         u32 ncpy = ((int) llen < off_disp) ? 0 : (llen - off_disp);
         if (ncpy > TV_LLEN_DISP) ncpy = TV_LLEN_DISP;
         bool al = !ww && off_disp && (ptr != ptr_next);
-        bool ar = !ww && ((int) llen > off_disp + TV_LLEN_DISP);
+        bool ar = !ww && (llen > off_disp + TV_LLEN_DISP);
         
         // set text color / find start of comment of scripts
         u32 color_text = (nln == mno) ? script_color_active : (is_script) ? script_color_code : (u32) COLOR_TVTEXT;
@@ -1243,7 +1390,7 @@ void MemTextView(const char* text, u32 len, char* line0, int off_disp, int lno, 
         }
         
         // colorize comment if is_script
-        if ((cmt_start > 0) && (cmt_start < TV_LLEN_DISP)) {
+        if ((cmt_start > 0) && ((u32) cmt_start < TV_LLEN_DISP)) {
             memset(txtstr, ' ', cmt_start);
             DrawString(TOP_SCREEN, txtstr, x_txt, y, script_color_comment, COLOR_TRANSPARENT);
         }
@@ -1331,7 +1478,7 @@ bool MemTextViewer(const char* text, u32 len, u32 start, bool as_script) {
                 for (; line0_next > line0; line0++)
                     if (*line0 == '\n') lcurr++;
             }
-            if (off_disp + TV_LLEN_DISP > (int) llen_max) off_disp = llen_max - TV_LLEN_DISP;
+            if (off_disp + TV_LLEN_DISP > llen_max) off_disp = llen_max - TV_LLEN_DISP;
             if ((off_disp < 0) || ww) off_disp = 0;
         }
     }
@@ -1436,6 +1583,8 @@ bool ExecuteGM9Script(const char* path_script) {
     
     // reset control flow global vars
     ifcnt = 0;
+    jump_ptr = NULL;
+    for_ptr = NULL;
     skip_state = 0;
     syntax_error = false;
     
@@ -1515,15 +1664,32 @@ bool ExecuteGM9Script(const char* path_script) {
         char err_str[_ERR_STR_LEN+1] = { 0 };
         bool result = run_line(ptr, line_end, &flags, err_str, false);
         
+        
         // skip state handling
         char* skip_ptr = ptr;
-        if (skip_state) {
+        if ((skip_state == _SKIP_BLOCK) || (skip_state == _SKIP_TILL_END)) {
             skip_ptr = skip_block(line_end + 1, (skip_state == _SKIP_TILL_END), false);
             if (!skip_ptr) {
                 snprintf(err_str, _ERR_STR_LEN, "unclosed conditional");
                 result = false;
                 syntax_error = true;
             }
+        } else if (skip_state == _SKIP_TO_NEXT) {
+            skip_ptr = find_next(ptr);
+            if (!skip_ptr) {
+                snprintf(err_str, _ERR_STR_LEN, "'for' without 'next'");
+                result = false;
+                syntax_error = true;
+            }
+            for_ptr = (char*) line_end + 1;
+        } else if (skip_state == _SKIP_TO_FOR) {
+            skip_ptr = for_ptr;
+            if (!skip_ptr) {
+                snprintf(err_str, _ERR_STR_LEN, "'next' without 'for'");
+                result = false;
+                syntax_error = true;
+            }
+            skip_state = 0;
         }
         
         
@@ -1560,6 +1726,8 @@ bool ExecuteGM9Script(const char* path_script) {
             lno = get_lno(script, script_size, ptr);
             ifcnt = 0; // jumping into conditional block is unexpected/unsupported
             jump_ptr = NULL;
+            for_ptr = NULL;
+            for_handler(NULL, NULL, NULL, false);
         } else {
             ptr = line_end + 1;
             lno++;
@@ -1569,6 +1737,10 @@ bool ExecuteGM9Script(const char* path_script) {
     // check for unresolved if here
     if (ifcnt) {
         ShowPrompt(false, "%s\nend of script: unresolved 'if'", path_str);
+        return false;
+    } else if (for_ptr) {
+        ShowPrompt(false, "%s\nend of script: unresolved 'for'", path_str);
+        for_handler(NULL, NULL, NULL, false);
         return false;
     }
     

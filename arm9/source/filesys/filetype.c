@@ -6,12 +6,15 @@
 #include "keydb.h"
 #include "ctrtransfer.h"
 #include "scripting.h"
+#include "pcx.h"
+#include "ui.h" // only for font file detection
 
 u64 IdentifyFileType(const char* path) {
     const u8 romfs_magic[] = { ROMFS_MAGIC };
     const u8 tickdb_magic[] = { TICKDB_MAGIC };
     const u8 smdh_magic[] = { SMDH_MAGIC };
     const u8 threedsx_magic[] = { THREEDSX_EXT_MAGIC };
+    const u8 pcx_magic[] = { PCX_MAGIC };
     
     if (!path) return 0; // safety
     u8 header[0x200] __attribute__((aligned(32))); // minimum required size
@@ -94,7 +97,9 @@ u64 IdentifyFileType(const char* path) {
         }
     }
     
-    if ((fsize > sizeof(AgbHeader)) &&
+    if (GetFontFromPbm(data, fsize, NULL, NULL)) {
+        return FONT_PBM;
+    } else if ((fsize > sizeof(AgbHeader)) &&
         (ValidateAgbHeader((AgbHeader*) data) == 0)) {
         return GAME_GBA;
     } else if ((fsize > sizeof(BossHeader)) &&
@@ -107,6 +112,9 @@ u64 IdentifyFileType(const char* path) {
         (GetNcchInfoVersion((NcchInfoHeader*) data)) &&
         fname && (strncasecmp(fname, NCCHINFO_NAME, 32) == 0)) {
         return BIN_NCCHNFO; // ncchinfo.bin file
+    } else if ((fsize > sizeof(pcx_magic)) && (memcmp(data, pcx_magic, sizeof(pcx_magic)) == 0) &&
+        (strncasecmp(ext, "pcx", 4) == 0)) {
+        return GFX_PCX;
     } else if (ext && ((strncasecmp(ext, "cdn", 4) == 0) || (strncasecmp(ext, "nus", 4) == 0))) {
         char path_cetk[256];
         char* ext_cetk = path_cetk + (ext - path);
