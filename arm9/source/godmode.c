@@ -147,7 +147,7 @@ void GenerateBatteryBitmap(u8* bitmap, u32 width, u32 height, u32 color_bg) {
 }
 
 void DrawTopBar(const char* curr_path) {
-    const u32 bartxt_start = (FONT_HEIGHT_EXT == 10) ? 1 : 2;
+    const u32 bartxt_start = (FONT_HEIGHT_EXT >= 10) ? 1 : (FONT_HEIGHT_EXT >= 7) ? 2 : 3;
     const u32 bartxt_x = 2;
     const u32 len_path = SCREEN_WIDTH_TOP - 120;
     char tempstr[64];
@@ -286,8 +286,8 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
 
 void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
     const int str_width = (SCREEN_WIDTH_ALT-3) / FONT_WIDTH_EXT;
-    const u32 stp_y = 12;
-    const u32 start_y = (MAIN_SCREEN == TOP_SCREEN) ? 0 : stp_y;
+    const u32 stp_y = min(12, FONT_HEIGHT_EXT + 4);
+    const u32 start_y = (MAIN_SCREEN == TOP_SCREEN) ? 0 : 12;
     const u32 pos_x = 0;
     const u32 lines = (SCREEN_HEIGHT-(start_y+2)+(stp_y-1)) / stp_y;
     u32 pos_y = start_y + 2;
@@ -390,8 +390,38 @@ u32 SdFormatMenu(void) {
     return 0;
 }
 
+u32 FileGraphicsViewer(const char* path) {
+    u64 filetype = IdentifyFileType(path);
+    u8* bitmap = TEMP_BUFFER;
+    u32 buffer_size = TEMP_BUFFER_SIZE / 2;
+    u32 w = 0;
+    u32 h = 0;
+    
+    if (filetype & GFX_PCX) {
+        u8* pcx = TEMP_BUFFER + TEMP_BUFFER_SIZE / 2;
+        u32 pcx_size = FileGetData(path, pcx, TEMP_BUFFER_SIZE / 2, 0);
+        if ((pcx_size > 0) && (pcx_size <  TEMP_BUFFER_SIZE / 2) && 
+            (PCX_Decompress(bitmap, buffer_size, pcx, pcx_size))) {
+            PCXHdr* hdr = (PCXHdr*) (void*) pcx;
+            w = PCX_Width(hdr);
+            h = PCX_Height(hdr);
+        }
+    }
+    
+    if (w && h && (w < SCREEN_WIDTH(ALT_SCREEN)) && (h < SCREEN_HEIGHT)) {
+        ClearScreenF(true, true, COLOR_STD_BG);
+        DrawBitmap(ALT_SCREEN, -1, -1, w, h, bitmap);
+        ShowString("Press <A> to continue");
+        InputWait(0);
+        ClearScreenF(true, true, COLOR_STD_BG);
+        return 0;
+    }
+    
+    return 1;
+}
+
 u32 FileHexViewer(const char* path) {
-    static const u32 max_data = (SCREEN_HEIGHT / 8) * 16;
+    const u32 max_data = (SCREEN_HEIGHT / FONT_HEIGHT_EXT) * 16 * ((FONT_WIDTH_EXT > 4) ? 1 : 2);
     static u32 mode = 0;
     u8* data = TEMP_BUFFER;
     u8* bottom_cpy = TEMP_BUFFER + 0xC0000; // a copy of the bottom screen framebuffer
@@ -430,9 +460,18 @@ u32 FileHexViewer(const char* path) {
     
     while (true) {
         if (mode != last_mode) {
-            switch (mode) { // display mode
-                #ifdef FONT_6X10
-                case 1:
+            if (FONT_WIDTH_EXT <= 5) {
+                mode = 0; 
+                vpad = 1;
+                hlpad = hrpad = 2;
+                cols = 16;
+                x_off = (SCREEN_WIDTH_TOP - SCREEN_WIDTH_BOT) / 2;
+                x_ascii = SCREEN_WIDTH_TOP - x_off - (FONT_WIDTH_EXT * cols);
+                x_hex = ((SCREEN_WIDTH_TOP - ((hlpad + (2*FONT_WIDTH_EXT) + hrpad) * cols)) / 2) -
+                    (((cols - 8) / 2) * FONT_WIDTH_EXT);
+                dual_screen = true;
+            } else if (FONT_WIDTH_EXT <= 6) {
+                if (mode == 1) {
                     vpad = 0;
                     hlpad = hrpad = 1;
                     cols = 16;
@@ -440,8 +479,7 @@ u32 FileHexViewer(const char* path) {
                     x_ascii = SCREEN_WIDTH_TOP - (FONT_WIDTH_EXT * cols);
                     x_hex = x_off + (8*FONT_WIDTH_EXT) + 16;
                     dual_screen = false;
-                    break;
-                default:
+                } else {
                     mode = 0; 
                     vpad = 0;
                     hlpad = hrpad = 3;
@@ -450,32 +488,34 @@ u32 FileHexViewer(const char* path) {
                     x_ascii = SCREEN_WIDTH_TOP - x_off - (FONT_WIDTH_EXT * cols);
                     x_hex = (SCREEN_WIDTH_TOP - ((hlpad + (2*FONT_WIDTH_EXT) + hrpad) * cols)) / 2;
                     dual_screen = true;
-                    break;
-                #else
+                }
+            } else switch (mode) { // display mode
                 case 1:
                     vpad = hlpad = hrpad = 1;
                     cols = 12;
                     x_off = 0;
-                    x_ascii = SCREEN_WIDTH_TOP - (8 * cols);
-                    x_hex = x_off + (8*8) + 12;
+                    x_ascii = SCREEN_WIDTH_TOP - (FONT_WIDTH_EXT * cols);
+                    x_hex = ((SCREEN_WIDTH_TOP - ((hlpad + (2*FONT_WIDTH_EXT) + hrpad) * cols) -
+                        ((cols - 8) * FONT_WIDTH_EXT)) / 2);
                     dual_screen = false;
                     break;
                 case 2:
                     vpad = 1;
                     hlpad = 0;
-                    hrpad = 1;
+                    hrpad = 1 + 8 - FONT_WIDTH_EXT;
                     cols = 16;
                     x_off = -1;
-                    x_ascii = SCREEN_WIDTH_TOP - (8 * cols);
+                    x_ascii = SCREEN_WIDTH_TOP - (FONT_WIDTH_EXT * cols);
                     x_hex = 0;
                     dual_screen = false;
                     break;
                 case 3:
                     vpad = hlpad = hrpad = 1;
                     cols = 16;
-                    x_off = 20;
+                    x_off = ((SCREEN_WIDTH_TOP - ((hlpad + (2*FONT_WIDTH_EXT) + hrpad) * cols)
+                        - 12 - (8*FONT_WIDTH_EXT)) / 2);
                     x_ascii = -1;
-                    x_hex = x_off + (8*8) + 12;
+                    x_hex = x_off + (8*FONT_WIDTH_EXT) + 12;
                     dual_screen = false;
                     break;
                 default:
@@ -483,11 +523,10 @@ u32 FileHexViewer(const char* path) {
                     vpad = hlpad = hrpad = 2;
                     cols = 8;
                     x_off = (SCREEN_WIDTH_TOP - SCREEN_WIDTH_BOT) / 2;
-                    x_ascii = SCREEN_WIDTH_TOP - x_off - (8 * cols);
-                    x_hex = (SCREEN_WIDTH_TOP - ((hlpad + 16 + hrpad) * cols)) / 2;
+                    x_ascii = SCREEN_WIDTH_TOP - x_off - (FONT_WIDTH_EXT * cols);
+                    x_hex = (SCREEN_WIDTH_TOP - ((hlpad + (2*FONT_WIDTH_EXT) + hrpad) * cols)) / 2;
                     dual_screen = true;
                     break;
-                #endif
             }
             rows = (dual_screen ? 2 : 1) * SCREEN_HEIGHT / (FONT_HEIGHT_EXT + (2*vpad));
             total_shown = rows * cols;
@@ -577,7 +616,7 @@ u32 FileHexViewer(const char* path) {
             else if (pad_state & BUTTON_UP) offset = (offset > step_ud) ? offset - step_ud : 0;
             else if (pad_state & BUTTON_LEFT) offset = (offset > step_lr) ? offset - step_lr : 0;
             else if ((pad_state & BUTTON_R1) && (pad_state & BUTTON_Y)) mode++;
-            else if (pad_state & BUTTON_A) edit_mode = true;
+            else if ((pad_state & BUTTON_A) && total_data) edit_mode = true;
             else if (pad_state & (BUTTON_B|BUTTON_START)) break;
             else if (found_size && (pad_state & BUTTON_R1) && (pad_state & BUTTON_X)) {
                 u8 data[64] = { 0 };
@@ -952,6 +991,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     bool keyinitable = (FTYPE_KEYINIT(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
     bool keyinstallable = (FTYPE_KEYINSTALL(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
     bool scriptable = (FTYPE_SCRIPT(filetype));
+    bool fontable = (FTYPE_FONT(filetype));
+    bool viewable = (FTYPE_GFX(filetype));
     bool bootable = (FTYPE_BOOTABLE(filetype));
     bool installable = (FTYPE_INSTALLABLE(filetype));
     bool agbexportable = (FTPYE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
@@ -966,7 +1007,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         extrcodeable = (FTYPE_HASCODE(filetype_cxi));
     }
     
-    bool special_opt = mountable || verificable || decryptable || encryptable || cia_buildable || cia_buildable_legit || cxi_dumpable || tik_buildable || key_buildable || titleinfo || renamable || transferable || hsinjectable || restorable || xorpadable || ebackupable || ncsdfixable || extrcodeable || keyinitable || keyinstallable || bootable || scriptable || installable || agbexportable || agbimportable;
+    bool special_opt = mountable || verificable || decryptable || encryptable || cia_buildable || cia_buildable_legit || cxi_dumpable || tik_buildable || key_buildable || titleinfo || renamable || transferable || hsinjectable || restorable || xorpadable || ebackupable || ncsdfixable || extrcodeable || keyinitable || keyinstallable || bootable || scriptable || fontable || viewable || installable || agbexportable || agbimportable;
     
     char pathstr[32+1];
     TruncateString(pathstr, file_path, 32, 8);
@@ -1016,6 +1057,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         (filetype & BIN_LEGKEY) ? "Build " KEYDB_NAME     :
         (filetype & BIN_NCCHNFO)? "NCCHinfo options..."   :
         (filetype & TXT_SCRIPT) ? "Execute GM9 script"    :
+        (filetype & FONT_PBM)   ? "Set as active font"    :
+        (filetype & GFX_PCX)    ? "View PCX bitmap file"  :
         (filetype & HDR_NAND)   ? "Rebuild NCSD header"   :
         (filetype & NOIMG_NAND) ? "Rebuild NCSD header" : "???";
     optionstr[hexviewer-1] = "Show in Hexeditor";
@@ -1158,6 +1201,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     int install = (installable) ? ++n_opt : -1;
     int boot = (bootable) ? ++n_opt : -1;
     int script = (scriptable) ? ++n_opt : -1;
+    int font = (fontable) ? ++n_opt : -1;
+    int view = (viewable) ? ++n_opt : -1;
     int agbexport = (agbexportable) ? ++n_opt : -1;
     int agbimport = (agbimportable) ? ++n_opt : -1;
     if (mount > 0) optionstr[mount-1] = (filetype & GAME_TMD) ? "Mount CXI/NDS to drive" : "Mount image to drive";
@@ -1185,6 +1230,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     if (install > 0) optionstr[install-1] = "Install FIRM";
     if (boot > 0) optionstr[boot-1] = "Boot FIRM";
     if (script > 0) optionstr[script-1] = "Execute GM9 script";
+    if (view > 0) optionstr[font-1] = "View PCX bitmap file";
+    if (font > 0) optionstr[font-1] = "Set as active font";
     if (agbexport > 0) optionstr[agbexport-1] = "Dump GBA VC save";
     if (agbimport > 0) optionstr[agbimport-1] = "Inject GBA VC save";
     
@@ -1592,6 +1639,17 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         ClearScreenF(true, true, COLOR_STD_BG);
         return 0;
     }
+    else if (user_select == font) { // set font
+        u32 pbm_size = FileGetData(file_path, TEMP_BUFFER, TEMP_BUFFER_SIZE, 0);
+        if (pbm_size) SetFontFromPbm(TEMP_BUFFER, pbm_size);
+        ClearScreenF(true, true, COLOR_STD_BG);
+        return 0;
+    }
+    else if (user_select == view) { // view gfx
+        if (FileGraphicsViewer(file_path) != 0)
+            ShowPrompt(false, "%s\nError: Cannot view file");
+        return 0;
+    }
     else if (user_select == agbexport) { // export GBA VC save
         if (DumpGbaVcSavegame(file_path) == 0)
             ShowPrompt(false, "Savegame dumped to " OUTPUT_PATH);
@@ -1777,17 +1835,20 @@ u32 GodMode(int entrypoint) {
     
     // get mode string for splash screen
     const char* disp_mode = NULL;
-	if (bootloader) disp_mode = "bootloader mode\nR+LEFT for menu";
+    if (bootloader) disp_mode = "bootloader mode\nR+LEFT for menu";
     else if (!IS_SIGHAX && (entrypoint == ENTRY_NANDBOOT)) disp_mode = "oldloader mode";
     else if (entrypoint == ENTRY_NTRBOOT) disp_mode = "ntrboot mode";
     else if (entrypoint == ENTRY_UNKNOWN) disp_mode = "unknown mode";
-	
-	bool show_splash = true;
-	#ifdef SALTMODE
+    
+    bool show_splash = true;
+    #ifdef SALTMODE
     show_splash = !bootloader;
     #endif
     
-	// show splash screen (if enabled)
+    // init font
+    if (!SetFontFromPbm(NULL, 0)) return exit_mode;
+    
+    // show splash screen (if enabled)
     ClearScreenF(true, true, COLOR_STD_BG);
     if (show_splash) SplashInit(disp_mode);
     u64 timer = timer_start(); // for splash delay
@@ -1803,7 +1864,8 @@ u32 GodMode(int entrypoint) {
     InitExtFS();
     
     // check for embedded essential backup
-    if (IS_SIGHAX && !PathExist("S:/essential.exefs") && CheckGenuineNandNcsd() &&
+    if (((entrypoint == ENTRY_NANDBOOT) || (entrypoint == ENTRY_B9S)) &&
+        !PathExist("S:/essential.exefs") && CheckGenuineNandNcsd() &&
         ShowPrompt(true, "Essential files backup not found.\nCreate one now?")) {
         if (EmbedEssentialBackup("S:/nand.bin") == 0) {
             u32 flags = BUILD_PATH | SKIP_ALL;
@@ -1816,7 +1878,7 @@ u32 GodMode(int entrypoint) {
     if (IS_SIGHAX) { // we could actually do this on any entrypoint
         DsTime dstime;
         get_dstime(&dstime);
-        if ((DSTIMEGET(&dstime, bcd_Y) < 17) &&
+        if ((DSTIMEGET(&dstime, bcd_Y) < 18) &&
              ShowPrompt(true, "RTC date&time seems to be\nwrong. Set it now?") &&
              ShowRtcSetterPrompt(&dstime, "Set RTC date&time:")) {
             char timestr[32];
@@ -1853,9 +1915,9 @@ u32 GodMode(int entrypoint) {
                 godmode9 = true;
             } else if (user_select == 2) {
                 bootloader = true;
-            } else if ((user_select == 3) && (FileSelectorSupport(loadpath, "Bootloader payloads menu.\nSelect payload:", PAYLOADS_DIR, "*.firm", true, false))) {
+            } else if ((user_select == 3) && (FileSelectorSupport(loadpath, "Bootloader payloads menu.\nSelect payload:", PAYLOADS_DIR, "*.firm"))) {
                 BootFirmHandler(loadpath, false, false);
-            } else if ((user_select == 4) && (FileSelectorSupport(loadpath, "Bootloader scripts menu.\nSelect script:", SCRIPTS_DIR, "*.gm9", true, false))) {
+            } else if ((user_select == 4) && (FileSelectorSupport(loadpath, "Bootloader scripts menu.\nSelect script:", SCRIPTS_DIR, "*.gm9"))) {
                 ExecuteGM9Script(loadpath);
             } else if (user_select == 5) {
                 exit_mode = GODMODE_EXIT_POWEROFF;
@@ -1882,8 +1944,6 @@ u32 GodMode(int entrypoint) {
     ClearScreenF(true, true, COLOR_STD_BG); // clear splash
     
     while (godmode9) { // this is the main loop
-        int curr_drvtype = DriveType(current_path);
-        
         // basic sanity checking
         if (!current_dir->n_entries) { // current dir is empty -> revert to root
             ShowPrompt(false, "Invalid directory object");
@@ -1899,6 +1959,8 @@ u32 GodMode(int entrypoint) {
         }
         if (cursor >= current_dir->n_entries) // cursor beyond allowed range
             cursor = current_dir->n_entries - 1;
+        
+        int curr_drvtype = DriveType(current_path);
         DirEntry* curr_entry = &(current_dir->entry[cursor]);
         if ((mark_next >= 0) && (curr_entry->type != T_DOTDOT)) {
             curr_entry->marked = mark_next;
@@ -1953,8 +2015,8 @@ u32 GodMode(int entrypoint) {
                         scroll = 0;
                     }
                 } else if (user_select == fixcmac) {
-                    ShowString("%s\nFixing CMACs for drive...", namestr);
                     RecursiveFixFileCmac(curr_entry->path);
+                    ClearScreenF(true, false, COLOR_STD_BG);
                 } else if (user_select == dirnfo) {
                     bool is_drive = (!*current_path);
                     FILINFO fno;
@@ -2238,8 +2300,8 @@ u32 GodMode(int entrypoint) {
             u32 n_opt = 0;
             int poweroff = ++n_opt;
             int reboot = ++n_opt;
-            int scripts = (CheckSupportDir(SCRIPTS_DIR)) ? (int) ++n_opt : -1;
-            int payloads = (CheckSupportDir(PAYLOADS_DIR)) ? (int) ++n_opt : -1;
+            int scripts = ++n_opt;
+            int payloads = ++n_opt;
             int more = ++n_opt;
             if (poweroff > 0) optionstr[poweroff - 1] = "Poweroff system";
             if (reboot > 0) optionstr[reboot - 1] = "Reboot system";
@@ -2252,13 +2314,19 @@ u32 GodMode(int entrypoint) {
                 (user_select != poweroff) && (user_select != reboot)) {
                 char loadpath[256];
                 if ((user_select == more) && (HomeMoreMenu(current_path) == 0)) break; // more... menu
-                else if ((user_select == scripts) && (FileSelectorSupport(loadpath, "HOME scripts... menu.\nSelect script:", SCRIPTS_DIR, "*.gm9", true, false))) {
-                    ExecuteGM9Script(loadpath);
-                    GetDirContents(current_dir, current_path);
-                    ClearScreenF(true, true, COLOR_STD_BG);
-                    break;
-                } else if ((user_select == payloads) && (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm", true, false))) {
-                    BootFirmHandler(loadpath, false, false);
+                else if (user_select == scripts) {
+                    if (!CheckSupportDir(SCRIPTS_DIR)) {
+                        ShowPrompt(false, "Scripts directory not found.\n(default path: 0:/gm9/" SCRIPTS_DIR ")");
+                    } else if (FileSelectorSupport(loadpath, "HOME scripts... menu.\nSelect script:", SCRIPTS_DIR, "*.gm9")) {
+                        ExecuteGM9Script(loadpath);
+                        GetDirContents(current_dir, current_path);
+                        ClearScreenF(true, true, COLOR_STD_BG);
+                        break;
+                    }
+                } else if (user_select == payloads) {
+                    if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
+                    else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm"))
+                        BootFirmHandler(loadpath, false, false);
                 }
             }
             
@@ -2301,8 +2369,8 @@ u32 GodMode(int entrypoint) {
 
 #else
 u32 ScriptRunner(int entrypoint) {
-    // show splash and initialize
-    ClearScreenF(true, true, COLOR_STD_BG);
+    // init font and show splash
+    if (!SetFontFromPbm(NULL, 0)) return GODMODE_EXIT_POWEROFF;
     SplashInit("scriptrunner mode");
     u64 timer = timer_start();
     
@@ -2326,7 +2394,7 @@ u32 ScriptRunner(int entrypoint) {
         ExecuteGM9Script(NULL);
     } else if (PathExist("V:/" VRAM0_SCRIPTS)) {
         char loadpath[256];
-        if (FileSelector(loadpath, FLAVOR " scripts menu.\nSelect script:", "V:/" VRAM0_SCRIPTS, "*.gm9", true, false))
+        if (FileSelector(loadpath, FLAVOR " scripts menu.\nSelect script:", "V:/" VRAM0_SCRIPTS, "*.gm9", HIDE_EXT))
             ExecuteGM9Script(loadpath);
     } else ShowPrompt(false, "Compiled as script autorunner\nbut no script provided.\n \nDerp!");
     
