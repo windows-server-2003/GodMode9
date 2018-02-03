@@ -942,6 +942,9 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
 {
     static u32 last_prog_width = 0;
     static u64 timer = 0;
+	static u64 last_msec = 0;
+	static u64 last_file_end = 0;
+	static u64 last_file_msec = 0;
     const u32 bar_width = SCREEN_WIDTH_MAIN;
     const u32 bar_height = 5;
     const u32 bar_pos_x = 0;
@@ -954,6 +957,8 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     
     static u64 last_sec_remain = 0;
     if (!current) {
+		last_file_end += last_file_msec; // save last file's end time
+		last_file_msec = 0;
         timer = timer_start();
         last_sec_remain = 0;
     }
@@ -985,9 +990,22 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     CheckBrightness();
 	
 	// Multi threading(handle user input in background)
-	BGInputChecking = true;
-	GM9HandleUserInput();
-	BGInputChecking = false;
+	u64 time_cur = timer_msec(timer);
+    if ((time_cur + last_file_end) >= (last_msec + INTERVAL_SCROLL)) {
+		BGInputChecking = true;
+		GM9HandleUserInput();
+		BGInputChecking = false;
+		last_msec += INTERVAL_SCROLL;
+	}
+	// new pressed button detecting
+	if (InputCheck(2)) {
+		BGInputChecking = true;
+		GM9HandleUserInput();
+		BGInputChecking = false;
+	}
+	last_file_msec = time_cur;
+	
+	if ((HID_STATE & BUTTON_B) && (HID_STATE & BUTTON_SELECT)) return false; // press B+Select to cancel
 	
     return true; // currently don't allow cancelling
 }

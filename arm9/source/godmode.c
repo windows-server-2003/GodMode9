@@ -78,6 +78,8 @@ u32 SplashInit(const char* modestr) {
 // reserve 480kB for DirStruct, 64kB for PaneData, just to be safe
 static DirStruct* current_dir = (DirStruct*) (DIR_BUFFER + 0x00000);
 static DirStruct* clipboard   = (DirStruct*) (DIR_BUFFER + 0x78000);
+static DirStruct* clipboard_cur = (DirStruct*) (DIR_BUFFER + 0x100000);
+static char current_path_cur [256];
 static PaneData* panedata     = (PaneData*)  (DIR_BUFFER + 0xF0000);
 
 void GetTimeString(char* timestr, bool forced_update, bool full_year) {
@@ -1997,9 +1999,15 @@ u8 GM9HandleUserInput () {
         
         // handle user input
 		u32 pad_state;
-        if (BGInputChecking) pad_state = HID_STATE;
+        if (BGInputChecking) {
+			pad_state = InputCheck(false);
+			InputCheck(true);
+		}
 		else pad_state = InputWait(3);
-        bool switched = (pad_state & BUTTON_R1);
+		
+		bool switched;
+		if (BGInputChecking) switched = HID_STATE & (BUTTON_R1);
+		else switched = (pad_state & BUTTON_R1);
         
         // basic navigation commands
         if ((pad_state & BUTTON_A) && (curr_entry->type != T_FILE) && (curr_entry->type != T_DOTDOT)) { // for dirs
@@ -2071,6 +2079,7 @@ u8 GM9HandleUserInput () {
                 } else if (user_select == stdcpy) {
                     StandardCopy(&cursor, &scroll);
                 }
+				InputCheck(true);
             } else { // one level up
                 u32 user_select = 1;
                 if (curr_drvtype & DRV_SEARCH) { // special menu for search drive
@@ -2094,6 +2103,7 @@ u8 GM9HandleUserInput () {
             }
         } else if ((pad_state & BUTTON_A) && (curr_entry->type == T_FILE)) { // process a file
             FileHandlerMenu(current_path, &cursor, &scroll, &pane); // processed externally
+			InputCheck(true);
         } else if (*current_path && ((pad_state & BUTTON_B) || // one level down
             ((pad_state & BUTTON_A) && (curr_entry->type == T_DOTDOT)))) {
             if (switched) { // use R+B to return to root fast
@@ -2120,6 +2130,12 @@ u8 GM9HandleUserInput () {
                 while (!InitSDCardFS() &&
                     ShowPrompt(true, "Initialising SD card failed! Retry?"));
             } else {
+				if (BGInputChecking && clipboard_cur->n_entries && (DriveType(clipboard->entry[0].path) &
+					(DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
+					DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
+					if (!ShowPrompt(true, "A background operation that read and/or write\nto the SD is running.\n \n Do you really want to unmount SD?"))
+						return GODMODE_NO_EXIT;
+				}
                 DeinitSDCardFS();
                 if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) &
                     (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE)))
@@ -2234,7 +2250,9 @@ u8 GM9HandleUserInput () {
                 ShowPrompt(false, "Not allowed in XORpad drive");
             } else if ((curr_drvtype & DRV_CART) && (pad_state & BUTTON_Y)) {
                 ShowPrompt(false, "Not allowed in gamecart drive");
-            }else if (pad_state & BUTTON_Y) { // paste files
+			} else if (BGInputChecking && (pad_state & BUTTON_Y)) {
+				ShowPrompt(false, "Another file operation is running in background");
+            } else if (pad_state & BUTTON_Y) { // paste files
                 const char* optionstr[2] = { "Copy path(s)", "Move path(s)" };
                 char promptstr[64];
                 u32 flags = 0;
@@ -2246,18 +2264,22 @@ u8 GM9HandleUserInput () {
                 } else snprintf(promptstr, 64, "Paste %lu paths here?", clipboard->n_entries);
                 user_select = ((DriveType(clipboard->entry[0].path) & curr_drvtype & DRV_STDFAT)) ?
                     ShowSelectPrompt(2, optionstr, promptstr) : (ShowPrompt(true, promptstr) ? 1 : 0);
+				// backup current clipboard and current path because they can be changed by user while the operation
+				memcpy(clipboard_cur, clipboard, 0x78000);
+				snprintf(current_path_cur, 255, current_path);
+				
                 if (user_select) {
-                    for (u32 c = 0; c < clipboard->n_entries; c++) {
+                    for (u32 c = 0; c < clipboard_cur->n_entries; c++) {
                         char namestr[36+1];
-                        TruncateString(namestr, clipboard->entry[c].name, 36, 12);
+                        TruncateString(namestr, clipboard_cur->entry[c].name, 36, 12);
                         flags &= ~ASK_ALL;
-                        if (c < clipboard->n_entries - 1) flags |= ASK_ALL;
-                        if ((user_select == 1) && !PathCopy(current_path, clipboard->entry[c].path, &flags)) {    
-                            if (c + 1 < clipboard->n_entries) {
+                        if (c < clipboard_cur->n_entries - 1) flags |= ASK_ALL;
+                        if ((user_select == 1) && !PathCopy(current_path_cur, clipboard_cur->entry[c].path, &flags)) {    
+                            if (c + 1 < clipboard_cur->n_entries) {
                                 if (!ShowPrompt(true, "Failed copying path:\n%s\nProcess remaining?", namestr)) break;
                             } else ShowPrompt(false, "Failed copying path:\n%s", namestr);
-                        } else if ((user_select == 2) && !PathMove(current_path, clipboard->entry[c].path, &flags)) {    
-                            if (c + 1 < clipboard->n_entries) {
+                        } else if ((user_select == 2) && !PathMove(current_path_cur, clipboard_cur->entry[c].path, &flags)) {    
+                            if (c + 1 < clipboard_cur->n_entries) {
                                 if (!ShowPrompt(true, "Failed moving path:\n%s\nProcess remaining?", namestr)) break;
                             } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
                         }
@@ -2272,6 +2294,8 @@ u8 GM9HandleUserInput () {
                 ShowPrompt(false, "Not allowed in virtual path");
             } else if ((curr_drvtype & DRV_ALIAS) && (pad_state & (BUTTON_X))) {
                 ShowPrompt(false, "Not allowed in alias path");
+            } else if (BGInputChecking && (pad_state & (BUTTON_X))) {
+				ShowPrompt(false, "Another file operation is running in background");
             } else if ((pad_state & BUTTON_X) && (curr_entry->type != T_DOTDOT)) { // rename a file
                 char newname[256];
                 char namestr[20+1];
@@ -2312,10 +2336,12 @@ u8 GM9HandleUserInput () {
         }
         
         if (pad_state & BUTTON_START) {
-			DeinitExtFS();
-			DeinitSDCardFS();
-			if (switched || (pad_state & BUTTON_LEFT)) PowerOff();
-			Reboot();
+			if (!BGInputChecking || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to %s?", (switched || (pad_state & BUTTON_LEFT)) ? "shutdown" : "reboot")) {
+				DeinitExtFS();
+				DeinitSDCardFS();
+				if (switched || (pad_state & BUTTON_LEFT)) PowerOff();
+				Reboot();
+			}
         } else if (pad_state & (BUTTON_HOME|BUTTON_POWER)) { // Home menu
             const char* optionstr[8];
             const char* buttonstr = (pad_state & BUTTON_HOME) ? "HOME" : "POWER";
@@ -2347,19 +2373,25 @@ u8 GM9HandleUserInput () {
                     }
                 } else if (user_select == payloads) {
                     if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
-                    else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm"))
-                        BootFirmHandler(loadpath, false, false);
+                    else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm")) {
+						if (!BGInputChecking || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to boot this payload?"))
+							BootFirmHandler(loadpath, false, false);
+					}
                 }
             }
             
             if (user_select == poweroff) {
-				DeinitExtFS();
-				DeinitSDCardFS();
-				PowerOff();
+				if (!BGInputChecking || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to shutdown?")) {
+					DeinitExtFS();
+					DeinitSDCardFS();
+					PowerOff();
+				}
             } else if (user_select == reboot) { 
-				DeinitExtFS();
-				DeinitSDCardFS();
-                Reboot();
+				if (!BGInputChecking || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to reboot?")) {
+					DeinitExtFS();
+					DeinitSDCardFS();
+					Reboot();
+				}
             }
         } else if (pad_state & (CART_INSERT|CART_EJECT)) {
             if (!InitVCartDrive() && (pad_state & CART_INSERT)) // reinit virtual cart drive

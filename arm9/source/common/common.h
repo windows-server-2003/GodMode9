@@ -39,10 +39,10 @@
 
 // buffer area defines (in use by godmode.c)
 #define DIR_BUFFER          (0x20000000)
-#define DIR_BUFFER_SIZE     (0x100000)
+#define DIR_BUFFER_SIZE     (0x1FF000)
 // buffer area defines (in use by fsutil.c, fsinit.c and gameutil.c)
-#define MAIN_BUFFER         ((u8*)0x20100000)
-#define MAIN_BUFFER_SIZE    (0x10000) // must be multiple of 0x200
+#define MAIN_BUFFER         ((u8*)0x201FF000)
+#define MAIN_BUFFER_SIZE    (0x1000) // must be multiple of 0x200
 // buffer area defines (in use by nand.c)
 #define NAND_BUFFER         ((u8*)0x20200000)
 #define NAND_BUFFER_SIZE    (0x100000) // must be multiple of 0x200

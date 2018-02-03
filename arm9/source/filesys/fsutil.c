@@ -10,6 +10,8 @@
 #include "sdmmc.h"
 #include "ff.h"
 #include "ui.h"
+#include "multithread.h"
+#include "hid.h"
 
 #define SKIP_CUR        (1UL<< 9)
 #define OVERWRITE_CUR   (1UL<<10)
@@ -400,6 +402,9 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move) {
     bool to_virtual = GetVirtualSource(dest);
     bool silent = (flags && (*flags & SILENT));
     bool ret = false;
+	
+	// reset last hid state(for multithread)
+	InputCheck(true);
 	
     // check destination write permission (special paths only)
     if (((*dest == '1') || (strncmp(dest, "0:/Nintendo 3DS", 16) == 0)) &&

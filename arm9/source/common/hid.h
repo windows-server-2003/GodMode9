@@ -35,4 +35,5 @@
 
 
 u32 InputWait(u32 timeout_sec);
+u32 InputCheck(u32 mode);
 bool CheckButton(u32 button);
