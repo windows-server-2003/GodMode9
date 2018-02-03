@@ -1,6 +1,8 @@
 # GodMode9 - MultiThreadMod
-A multi-thread variant of [GodMode9](https://github.com/d0k3/GodMode9)
+A multi-thread variant of [GodMode9](https://github.com/d0k3/GodMode9) 
+
 You can browse files/dirs while copying file!!!
+
 It may have a lot of bugs and __may lose your data__ though.
 
 ## Warning
@@ -23,7 +25,7 @@ You may use this under the terms of the GNU General Public License GPL v2 or und
 
 
 ## Credits
-This mod cannot made without original [GodMode9](https://gitub.com/d0k3/GodMode9). Thanks for all contribution to it.
+This mod cannot be made without original [GodMode9](https://gitub.com/d0k3/GodMode9). Thanks for all contribution to it.
 * **d0k3**, for originally developing GodMode9
 * **Archshift**, for providing the base project infrastructure
 * **Normmatt**, for sdmmc.c / sdmmc.h and gamecart code, and for being of great help on countless other occasions
