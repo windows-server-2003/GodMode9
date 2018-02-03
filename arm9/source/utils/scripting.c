@@ -1202,6 +1202,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         if (flags & _FLG('k')) flags_ext |= SKIP_ALL;
         ret = ZipExtract(argv[0], argv[1], &flags_ext);
         if (err_str) snprintf(err_str, _ERR_STR_LEN, "extract zip failed");
+	}
     else if (id == CMD_ID_ISDIR) {
         DIR fdir;
         if (fvx_opendir(&fdir, argv[0]) == FR_OK) {
