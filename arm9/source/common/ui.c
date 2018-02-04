@@ -887,7 +887,7 @@ bool ShowRtcSetterPrompt(void* time, const char *format, ...) {
     return ret;
 }
 
-bool ShowProgress(u64 current, u64 total, const char* opstr)
+bool ShowProgress_org(u64 current, u64 total, const char* opstr)
 {
     static u32 last_prog_width = 0;
     static u64 timer = 0;
@@ -942,9 +942,9 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
 {
     static u32 last_prog_width = 0;
     static u64 timer = 0;
-	static u64 last_msec = 0;
-	static u64 last_file_end = 0;
-	static u64 last_file_msec = 0;
+    static u64 last_msec = 0;
+    static u64 last_file_end = 0;
+    static u64 last_file_msec = 0;
     const u32 bar_width = SCREEN_WIDTH_MAIN;
     const u32 bar_height = 5;
     const u32 bar_pos_x = 0;
@@ -957,8 +957,8 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     
     static u64 last_sec_remain = 0;
     if (!current) {
-		last_file_end += last_file_msec; // save last file's end time
-		last_file_msec = 0;
+        last_file_end += last_file_msec; // save last file's end time
+        last_file_msec = 0;
         timer = timer_start();
         last_sec_remain = 0;
     }
@@ -978,7 +978,7 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     ResizeString(progstr, tempstr, bar_width / FONT_WIDTH_EXT, 8, false);
     DrawString(MAIN_SCREEN, progstr, bar_pos_x, text_pos_y, COLOR_STD_FONT, COLOR_STD_BG);
 
-	
+    
     if (sec_elapsed >= 1) {
         snprintf(tempstr, 16, "ETA %02llum%02llus", sec_remain / 60, sec_remain % 60);
         ResizeString(progstr, tempstr, 16, 8, true);
@@ -988,25 +988,30 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     last_prog_width = prog_width;
     
     CheckBrightness();
-	
-	// Multi threading(handle user input in background)
-	u64 time_cur = timer_msec(timer);
+    
+    // Multi threading(handle user input in background)
+    u64 time_cur = timer_msec(timer);
     if ((time_cur + last_file_end) >= (last_msec + INTERVAL_SCROLL)) {
-		BGInputChecking = true;
-		GM9HandleUserInput();
-		BGInputChecking = false;
-		last_msec += INTERVAL_SCROLL;
-	}
-	// new pressed button detecting
-	if (InputCheck(2)) {
-		BGInputChecking = true;
-		GM9HandleUserInput();
-		BGInputChecking = false;
-	}
-	last_file_msec = time_cur;
-	
-	if ((HID_STATE & BUTTON_B) && (HID_STATE & BUTTON_SELECT)) return false; // press B+Select to cancel
-	
+        BGInputChecking = true;
+        GM9HandleUserInput();
+        BGInputChecking = false;
+        last_msec += INTERVAL_SCROLL;
+    }
+    // new pressed button detecting
+    if (InputCheck(2)) {
+        BGInputChecking = true;
+        GM9HandleUserInput();
+        BGInputChecking = false;
+    }
+    last_file_msec = time_cur;
+    
+    if ((HID_STATE & BUTTON_B) && (HID_STATE & BUTTON_SELECT)) return false; // press B+Select to cancel
+    
     return true; // currently don't allow cancelling
 }
 
+// Multi thread enable/disable
+inline bool ShowProgress(u64 current, u64 total, const char* opstr) {
+    if (EnableMultiThread) return ShowProgress_mt(current, total, opstr);
+    else return ShowProgress_org(current, total, opstr);
+}

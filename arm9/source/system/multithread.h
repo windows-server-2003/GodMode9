@@ -4,4 +4,5 @@
 
 #define INTERVAL_SCROLL 170
 
+bool EnableMultiThread;
 bool BGInputChecking;
