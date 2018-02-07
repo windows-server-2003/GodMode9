@@ -196,7 +196,7 @@ void DrawTopBar(const char* curr_path) {
 void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pane) {
     const u32 n_cb_show = 8;
     const u32 info_start = (MAIN_SCREEN == TOP_SCREEN) ? 18 : 2; // leave space for the topbar when required
-    // const u32 instr_x = (SCREEN_WIDTH_MAIN - (34*FONT_WIDTH_EXT)) / 2;
+    const u32 instr_x = (SCREEN_WIDTH_MAIN - (34*FONT_WIDTH_EXT)) / 2;
     const u32 len_info = (SCREEN_WIDTH_MAIN - ((SCREEN_WIDTH_MAIN >= 400) ? 80 : 20)) / 2;
     char tempstr[64];
     
@@ -270,8 +270,8 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
     DrawStringF(MAIN_SCREEN, SCREEN_WIDTH_MAIN - len_info - 4, info_start + 12 + (n_cb_show*10), COLOR_DARKGREY, COLOR_STD_BG,
         "%*s", len_info / FONT_WIDTH_EXT, tempstr);
     
-    // bottom: inctruction block
-    /* disabled for a progress bar
+    // bottom: inctruction block (only show if MTmod is disabled)
+	if (!EnableMultiThread) {
     char instr[512];
     snprintf(instr, 512, "%s\n%s%s%s%s%s%s%s%s",
         FLAVOR " " VERSION, // generic start part
@@ -286,7 +286,7 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         (clipboard->n_entries) ? "SELECT - Clear Clipboard\n" : "SELECT - Restore Clipboard\n", // only if clipboard is full
         "START - Reboot / [+R] Poweroff\nHOME button for HOME menu"); // generic end part
     DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr), COLOR_STD_FONT, COLOR_STD_BG, instr);
-    */
+	}
 }
 
 void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
@@ -2085,7 +2085,6 @@ u8 GM9HandleUserInput () {
                 } else if (user_select == stdcpy) {
                     StandardCopy(&cursor, &scroll);
                 }
-                InputCheck(true);
             } else { // one level up
                 u32 user_select = 1;
                 if (curr_drvtype & DRV_SEARCH) { // special menu for search drive
@@ -2109,7 +2108,6 @@ u8 GM9HandleUserInput () {
             }
         } else if ((pad_state & BUTTON_A) && (curr_entry->type == T_FILE)) { // process a file
             FileHandlerMenu(current_path, &cursor, &scroll, &pane); // processed externally
-            InputCheck(true);
         } else if (*current_path && ((pad_state & BUTTON_B) || // one level down
             ((pad_state & BUTTON_A) && (curr_entry->type == T_DOTDOT)))) {
             if (switched) { // use R+B to return to root fast
@@ -2270,6 +2268,7 @@ u8 GM9HandleUserInput () {
                 } else snprintf(promptstr, 64, "Paste %lu paths here?", clipboard->n_entries);
                 user_select = ((DriveType(clipboard->entry[0].path) & curr_drvtype & DRV_STDFAT)) ?
                     ShowSelectPrompt(2, optionstr, promptstr) : (ShowPrompt(true, promptstr) ? 1 : 0);
+					
                 // backup current clipboard and current path because they can be changed by user while the operation
                 memcpy(clipboard_cur, clipboard, 0x78000);
                 snprintf(current_path_cur, 255, current_path);
@@ -2289,7 +2288,7 @@ u8 GM9HandleUserInput () {
                                 if (!ShowPrompt(true, "Failed moving path:\n%s\nProcess remaining?", namestr)) break;
                             } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
                         }
-                    }                        
+                    }
                     clipboard->n_entries = 0;
                     GetDirContents(current_dir, current_path);
                 }
