@@ -26,6 +26,7 @@ u64 IdentifyFileType(const char* path) {
     
     
     // block crappy "._" files from getting recognized as filetype
+    if (!fname) return 0;
     if (strncmp(fname, "._", 2) == 0) return 0;
     
     if (ext) ext++;
@@ -110,7 +111,7 @@ u64 IdentifyFileType(const char* path) {
         return GAME_3DSX; // 3DSX (executable) file
     } else if ((fsize > sizeof(NcchInfoHeader)) &&
         (GetNcchInfoVersion((NcchInfoHeader*) data)) &&
-        fname && (strncasecmp(fname, NCCHINFO_NAME, 32) == 0)) {
+        (strncasecmp(fname, NCCHINFO_NAME, 32) == 0)) {
         return BIN_NCCHNFO; // ncchinfo.bin file
     } else if ((fsize > sizeof(pcx_magic)) && (memcmp(data, pcx_magic, sizeof(pcx_magic)) == 0) &&
         (strncasecmp(ext, "pcx", 4) == 0)) {
@@ -118,6 +119,7 @@ u64 IdentifyFileType(const char* path) {
     } else if (ext && ((strncasecmp(ext, "cdn", 4) == 0) || (strncasecmp(ext, "nus", 4) == 0))) {
         char path_cetk[256];
         char* ext_cetk = path_cetk + (ext - path);
+        strncpy(path_cetk, path, 256);
         strncpy(ext_cetk, "cetk", 5);
         if (FileGetSize(path_cetk) > 0)
             return GAME_NUSCDN; // NUS/CDN type 2
@@ -133,7 +135,7 @@ u64 IdentifyFileType(const char* path) {
         u64 type = 0;
         if ((fsize <= SCRIPT_MAX_SIZE) && ext && (strncasecmp(ext, SCRIPT_EXT, strnlen(SCRIPT_EXT, 16) + 1) == 0))
             type |= TXT_SCRIPT; // should be a script (which is also generic text)
-        if (fsize < TEMP_BUFFER_SIZE) type |= TXT_GENERIC;
+        if (fsize < STD_BUFFER_SIZE) type |= TXT_GENERIC;
         return type;
     } else if ((strncmp(path + 2, "/Nintendo DSiWare/", 18) == 0) &&
         (sscanf(fname, "%08lx.bin", &id) == 1) && (strncasecmp(ext, "bin", 4) == 0)) {

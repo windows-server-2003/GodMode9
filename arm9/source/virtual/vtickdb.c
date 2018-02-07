@@ -2,6 +2,8 @@
 #include "image.h"
 #include "ticket.h"
 
+#define VTICKDB_BUFFER_SIZE 0x100000 // 1MB, enough for ~20000 entries
+
 #define VFLAG_UNKNOWN       (1UL<<29)
 #define VFLAG_ESHOP         (1UL<<30)
 #define VFLAG_SYSTEM        (1UL<<31)
@@ -22,7 +24,7 @@ typedef struct {
 typedef struct {
     u32 n_entries;
     u8  reserved[12];
-    TickDbEntry entries[256]; // this number is only a placeholder
+    TickDbEntry entries[256]; // this number is only a placeholder (dangerous?)
 } __attribute__((packed)) TickDbInfo;
 
 // only for the main directory
@@ -32,7 +34,7 @@ static const VirtualFile vTickDbFileTemplates[] = {
     { "unknown"          , 0x00000000, 0x00000000, 0xFF, VFLAG_DIR | VFLAG_UNKNOWN }
 };
 
-static TickDbInfo* tick_info     = (TickDbInfo*) VGAME_BUFFER; // full 1MB reserved (enough for ~20000 entries)
+static TickDbInfo* tick_info = NULL;
 
 u32 AddTickDbInfo(TickDbInfo* info, Ticket* ticket, u32 offset) {
     if (ValidateTicket(ticket) != 0) return 1;
@@ -62,36 +64,55 @@ u32 AddTickDbInfo(TickDbInfo* info, Ticket* ticket, u32 offset) {
     return 0;
 }
 
-u32 InitVTickDbDrive(void) { // prerequisite: ticket.db mounted as image
+void DeinitVTickDbDrive(void) {
+    if (tick_info) free(tick_info);
+    tick_info = NULL;
+}
+
+u64 InitVTickDbDrive(void) { // prerequisite: ticket.db mounted as image
     const u32 area_offsets[] = { TICKDB_AREA_OFFSETS };
     if (!(GetMountState() & SYS_TICKDB)) return 0;
     
-    // reset internal db
+    // set up drive buffer / internal db
+    DeinitVTickDbDrive();
+    tick_info = (TickDbInfo*) malloc(VTICKDB_BUFFER_SIZE);
+    if (!tick_info) return 0;
     memset(tick_info, 0, 16);
+    
+    
+    // set up buffer
+    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    if (!buffer) {
+        DeinitVTickDbDrive();
+        return 0;
+    }
     
     // parse file, sector by sector
     for (u32 p = 0; p < sizeof(area_offsets) / sizeof(u32); p++) {
         u32 offset_area = area_offsets[p];
-        for (u32 i = 0; i < TICKDB_AREA_SIZE; i += (TEMP_BUFFER_SIZE - 0x200)) {
-            u32 read_bytes = min(TEMP_BUFFER_SIZE, TICKDB_AREA_SIZE - i);
-            u8* data = (u8*) TEMP_BUFFER;
+        for (u32 i = 0; i < TICKDB_AREA_SIZE; i += (STD_BUFFER_SIZE - 0x200)) {
+            u32 read_bytes = min(STD_BUFFER_SIZE, TICKDB_AREA_SIZE - i);
+            u8* data = buffer;
             if (ReadImageBytes(data, offset_area + i, read_bytes) != 0) {
-                tick_info->n_entries = 0;
+                DeinitVTickDbDrive();
+                free(buffer);
                 return 0;
             }
-            for (; data + TICKET_SIZE < ((u8*) TEMP_BUFFER) + read_bytes; data += 0x200) {
+            for (; data + TICKET_SIZE < buffer + read_bytes; data += 0x200) {
                 Ticket* ticket = TicketFromTickDbChunk(data, NULL, true);
                 if (!ticket) continue;
-                AddTickDbInfo(tick_info, ticket, offset_area + i + (data - ((u8*) TEMP_BUFFER)) + 0x18);
+                AddTickDbInfo(tick_info, ticket, offset_area + i + (data - buffer) + 0x18);
             }
         }
     }
     
+    free(buffer);
+    if (!tick_info->n_entries) DeinitVTickDbDrive();
     return (tick_info->n_entries) ? SYS_TICKDB : 0;
 }
 
-u32 CheckVTickDbDrive(void) {
-    if ((GetMountState() & SYS_TICKDB) && tick_info->n_entries) // very basic sanity check
+u64 CheckVTickDbDrive(void) {
+    if ((GetMountState() & SYS_TICKDB) && tick_info) // very basic sanity check
         return SYS_TICKDB;
     return 0;
 }
