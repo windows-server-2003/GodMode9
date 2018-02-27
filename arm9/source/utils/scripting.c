@@ -20,6 +20,7 @@
 #define _ARG_MAX_LEN    512
 #define _VAR_CNT_LEN    256
 #define _VAR_NAME_LEN   32
+#define _VAR_MAX_BUFF   256
 #define _ERR_STR_LEN    32
 
 #define _CHOICE_STR_LEN 32
@@ -44,8 +45,6 @@
 
 #define _MAX_FOR_DEPTH  16
 
-#define VAR_BUFFER      (SCRIPT_BUFFER + SCRIPT_BUFFER_SIZE - VAR_BUFFER_SIZE)
-
 // macros for textviewer
 #define TV_VPAD         1 // vertical padding per line (above / below)
 #define TV_HPAD         0 // horizontal padding per line (left)
@@ -57,7 +56,7 @@
 // some useful macros
 #define IS_WHITESPACE(c)    ((c == ' ') || (c == '\t') || (c == '\r') || (c == '\n'))
 #define MATCH_STR(s,l,c)    ((l == strlen(c)) && (strncmp(s, c, l) == 0))
-#define _FLG(c)             (1 << (c - 'a'))
+#define _FLG(c)             ((c >= 'a') ? (1 << (c - 'a')) : 0)
 
 #define IS_CTRLFLOW_CMD(id) ((id == CMD_ID_IF) || (id == CMD_ID_ELIF) || (id == CMD_ID_ELSE) || (id == CMD_ID_END) || \
     (id == CMD_ID_GOTO) || (id == CMD_ID_LABELSEL) || \
@@ -190,6 +189,10 @@ static char* jump_ptr = NULL;       // next position after a jump
 static char* for_ptr = NULL;        // position of the active 'for' command
 static u32 skip_state = 0;          // zero, _SKIP_BLOCK, _SKIP_TILL_END
 static u32 ifcnt = 0;               // current # of 'if' nesting
+
+// script / var buffers
+static void* script_buffer = NULL;
+static void* var_buffer = NULL;
 
 
 static inline bool isntrboot(void) {
@@ -324,17 +327,16 @@ void set_preview(const char* name, const char* content) {
 }
 
 char* set_var(const char* name, const char* content) {
-    Gm9ScriptVar* vars = (Gm9ScriptVar*) VAR_BUFFER;
-    u32 max_vars = VAR_BUFFER_SIZE / sizeof(Gm9ScriptVar);
+    Gm9ScriptVar* vars = (Gm9ScriptVar*) var_buffer;
     
     if ((strnlen(name, _VAR_NAME_LEN) > (_VAR_NAME_LEN-1)) || (strnlen(content, _VAR_CNT_LEN) > (_VAR_CNT_LEN-1)) ||
         (strchr(name, '[') || strchr(name, ']')))
         return NULL;
     
     u32 n_var = 0;
-    for (Gm9ScriptVar* var = vars; n_var < max_vars; n_var++, var++)
+    for (Gm9ScriptVar* var = vars; n_var < _VAR_MAX_BUFF; n_var++, var++)
         if (!*(var->name) || (strncmp(var->name, name, _VAR_NAME_LEN) == 0)) break;
-    if (n_var >= max_vars) return NULL;
+    if (n_var >= _VAR_MAX_BUFF) return NULL;
     strncpy(vars[n_var].name, name, _VAR_NAME_LEN);
     strncpy(vars[n_var].content, content, _VAR_CNT_LEN);
     if (!n_var) *(vars[n_var].content) = '\0'; // NULL var
@@ -387,16 +389,15 @@ void upd_var(const char* name) {
         get_dstime(&dstime);
         char env_date[16+1];
         char env_time[16+1];
-        snprintf(env_date, _VAR_CNT_LEN, "%02lX%02lX%02lX", (u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D);
-        snprintf(env_time, _VAR_CNT_LEN, "%02lX%02lX%02lX", (u32) dstime.bcd_h, (u32) dstime.bcd_m, (u32) dstime.bcd_s);
+        snprintf(env_date, 16, "%02lX%02lX%02lX", (u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D);
+        snprintf(env_time, 16, "%02lX%02lX%02lX", (u32) dstime.bcd_h, (u32) dstime.bcd_m, (u32) dstime.bcd_s);
         if (!name || (strncmp(name, "DATESTAMP", _VAR_NAME_LEN) == 0)) set_var("DATESTAMP", env_date);
         if (!name || (strncmp(name, "TIMESTAMP", _VAR_NAME_LEN) == 0)) set_var("TIMESTAMP", env_time);
     }
 }
 
 char* get_var(const char* name, char** endptr) {
-    Gm9ScriptVar* vars = (Gm9ScriptVar*) VAR_BUFFER;
-    u32 max_vars = VAR_BUFFER_SIZE / sizeof(Gm9ScriptVar);
+    Gm9ScriptVar* vars = (Gm9ScriptVar*) var_buffer;
     
     u32 name_len = 0;
     char* pname = NULL;
@@ -417,18 +418,18 @@ char* get_var(const char* name, char** endptr) {
     upd_var(vname); // handle dynamic env vars
     
     u32 n_var = 0;
-    for (Gm9ScriptVar* var = vars; n_var < max_vars; n_var++, var++) {
+    for (Gm9ScriptVar* var = vars; n_var < _VAR_MAX_BUFF; n_var++, var++) {
         if (!*(var->name) || (strncmp(var->name, vname, _VAR_NAME_LEN) == 0)) break;
     }
     
-    if (n_var >= max_vars || !*(vars[n_var].name)) n_var = 0;
+    if (n_var >= _VAR_MAX_BUFF || !*(vars[n_var].name)) n_var = 0;
     
     return vars[n_var].content;
 }
 
 bool init_vars(const char* path_script) {
     // reset var buffer
-    memset(VAR_BUFFER, 0x00, VAR_BUFFER_SIZE);
+    memset(var_buffer, 0x00, sizeof(Gm9ScriptVar) * _VAR_MAX_BUFF);
     
     // current path
     char curr_dir[_VAR_CNT_LEN];
@@ -631,8 +632,9 @@ char* find_next(char* ptr) {
 }
 
 char* find_label(const char* label, const char* last_found) {
-    char* script = (char*) SCRIPT_BUFFER; // equals global, not a good solution
+    char* script = (char*) script_buffer;
     char* ptr = script;
+    u32 label_len = strnlen(label, _ARG_MAX_LEN);
     
     if (last_found) {
         ptr = strchr(last_found, '\n');
@@ -661,7 +663,7 @@ char* find_label(const char* label, const char* last_found) {
             // compare it manually (also check for '*' at end)
             u32 pdiff = 0;
             for (; (pdiff < str_len) && (label[pdiff] == str[pdiff]); pdiff++);
-            if ((pdiff != str_len) && (label[pdiff] != '*')) continue; // no match
+            if ((pdiff < label_len) && (label[pdiff] != '*')) continue; // no match
             // otherwise: potential regular or wildcard match
             
             // may be a match, see if there are more strings after it
@@ -928,16 +930,19 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         ShowPrompt(false, argv[0]);
     }
     else if (id == CMD_ID_QR) {
+        const u32 screen_size = SCREEN_SIZE(ALT_SCREEN);
+        u8* screen_copy = (u8*) malloc(screen_size);
         u8 qrcode[qrcodegen_BUFFER_LEN_MAX];
         u8 temp[qrcodegen_BUFFER_LEN_MAX];
-        ret = qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
+        ret = screen_copy && qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
             qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
         if (ret) {
-            memcpy(TEMP_BUFFER, ALT_SCREEN, (SCREEN_HEIGHT * SCREEN_WIDTH_ALT * 3));
+            memcpy(screen_copy, ALT_SCREEN, screen_size);
             DrawQrCode(ALT_SCREEN, qrcode);
             ShowPrompt(false, argv[0]);
-            memcpy(ALT_SCREEN, TEMP_BUFFER, (SCREEN_HEIGHT * SCREEN_WIDTH_ALT * 3));
-        }
+            memcpy(ALT_SCREEN, screen_copy, screen_size);
+        } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
+        free(screen_copy);
     }
     else if (id == CMD_ID_ASK) {
         ret = ShowPrompt(true, argv[0]);
@@ -1018,7 +1023,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "argv[2] must be 2 chars");
             ret = false;
         } else {
-            for (u32 i = 0; str[i] && (i < _ARG_MAX_LEN); i++) {
+            for (u32 i = 0; (i < _ARG_MAX_LEN) && str[i]; i++) {
                 if (str[i] == argv[2][0]) str[i] = argv[2][1];
             }
             ret = set_var(argv[0], str);
@@ -1222,16 +1227,23 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         }
     }
     else if (id == CMD_ID_BOOT) {
-        size_t firm_size = FileGetData(argv[0], TEMP_BUFFER, TEMP_BUFFER_SIZE, 0);
-        ret = firm_size && IsBootableFirm(TEMP_BUFFER, firm_size);
-        if (ret) {
-            char fixpath[256] = { 0 };
-            if ((*argv[0] == '0') || (*argv[0] == '1'))
-                snprintf(fixpath, 256, "%s%s", (*argv[0] == '0') ? "sdmc" : "nand", argv[0] + 1);
-            else strncpy(fixpath, argv[0], 256);
-            BootFirm((FirmHeader*)(void*)TEMP_BUFFER, fixpath);
-            while(1);
-        } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "not a bootable firm");
+        u8* firm = (u8*) malloc(FIRM_MAX_SIZE);
+        if (!firm) {
+            ret = false;
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
+        } else {
+            size_t firm_size = FileGetData(argv[0], firm, FIRM_MAX_SIZE, 0);
+            ret = firm_size && IsBootableFirm(firm, firm_size);
+            if (ret) {
+                char fixpath[256] = { 0 };
+                if ((*argv[0] == '0') || (*argv[0] == '1'))
+                    snprintf(fixpath, 256, "%s%s", (*argv[0] == '0') ? "sdmc" : "nand", argv[0] + 1);
+                else strncpy(fixpath, argv[0], 256);
+                BootFirm((FirmHeader*)(void*)firm, fixpath);
+                while(1);
+            } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "not a bootable firm");
+            free(firm);
+        }
     }
     else if (id == CMD_ID_SWITCHSD) {
         DeinitExtFS();
@@ -1266,7 +1278,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         PowerOff();
     }
     else if (id == CMD_ID_BKPT) {
-        asm("bkpt\n\t");
+        bkpt;
         while(1);
     }
     else { // command not recognized / bad number of arguments
@@ -1577,20 +1589,25 @@ bool MemToCViewer(const char* text, u32 len, const char* title) {
 
 bool FileTextViewer(const char* path, bool as_script) {
     // load text file (completely into memory)
-    char* text = (char*) TEMP_BUFFER;
-    u32 flen = FileGetData(path, text, TEMP_BUFFER_SIZE, 0);
+    // text file needs to fit inside the STD_BUFFER_SIZE
+    char* text = (char*) malloc(STD_BUFFER_SIZE);
+    if (!text) return false;
+    
+    u32 flen = FileGetData(path, text, STD_BUFFER_SIZE, 0);
     u32 len = 0; // actual length may be shorter due to zero symbol
     for (len = 0; (len < flen) && text[len]; len++);
     
     // let MemTextViewer take over
-    return MemTextViewer(text, len, 1, as_script);
+    bool result = MemTextViewer(text, len, 1, as_script);
+    
+    free(text);
+    return result;
 }
 
 bool ExecuteGM9Script(const char* path_script) {
-    char* script = (char*) SCRIPT_BUFFER;
-    char* ptr = script;
     char path_str[32+1];
     TruncateString(path_str, path_script, 32, 12);
+    
     
     // reset control flow global vars
     ifcnt = 0;
@@ -1599,10 +1616,28 @@ bool ExecuteGM9Script(const char* path_script) {
     skip_state = 0;
     syntax_error = false;
     
-    // fetch script - if no path is given, assume script already in script buffer
-    u32 script_size = (path_script) ? FileGetData(path_script, (u8*) script, SCRIPT_MAX_SIZE, 0) : strnlen(script, SCRIPT_BUFFER_SIZE);
-    if (!script_size || (script_size >= SCRIPT_BUFFER_SIZE))
+    
+    // allocate && check memory
+    var_buffer = (void*) malloc(sizeof(Gm9ScriptVar) * _VAR_MAX_BUFF);
+    script_buffer = (void*) malloc(SCRIPT_MAX_SIZE);
+    char* script = (char*) script_buffer;
+    char* ptr = script;
+    
+    if (!var_buffer || !script_buffer) {
+        if (var_buffer) free(var_buffer);
+        if (script_buffer) free(script_buffer);
+        ShowPrompt(false, "Out of memory.");
         return false;
+    }
+    
+    // fetch script from path
+    u32 script_size = FileGetData(path_script, (u8*) script, SCRIPT_MAX_SIZE, 0);
+    if (!script_size || (script_size >= SCRIPT_MAX_SIZE)) {
+        free(var_buffer);
+        free(script_buffer);
+        return false;
+    }
+    
     char* end = script + script_size;
     *end = '\0';
     
@@ -1621,6 +1656,7 @@ bool ExecuteGM9Script(const char* path_script) {
     
     // script execute loop
     u32 lno = 1;
+    bool result = true;
     while (ptr < end) {
         u32 flags = 0;
         
@@ -1635,16 +1671,20 @@ bool ExecuteGM9Script(const char* path_script) {
                     ClearScreen(TOP_SCREEN, COLOR_STD_BG);
                 if (preview_mode > 2) {
                     char* preview_str = get_var("PREVIEW_MODE", NULL);
-                    u8* pcx = TEMP_BUFFER + TEMP_BUFFER_SIZE / 2;
-                    u32 pcx_size = FileGetData(preview_str, pcx, TEMP_BUFFER_SIZE / 2, 0);
-                    if ((pcx_size > 0) && (pcx_size <  TEMP_BUFFER_SIZE / 2) && 
-                        (PCX_Decompress(TEMP_BUFFER, TEMP_BUFFER_SIZE / 2, pcx, pcx_size))) {
+                    u32 pcx_size = fvx_qsize(preview_str);
+                    u8* pcx = (u8*) malloc(SCREEN_SIZE_TOP);
+                    u8* bitmap = (u8*) malloc(SCREEN_SIZE_TOP);
+                    if (pcx && bitmap && pcx_size && (pcx_size <  SCREEN_SIZE_TOP) && 
+                        (pcx_size == FileGetData(preview_str, pcx, pcx_size, 0)) &&
+                        (PCX_Decompress(bitmap, SCREEN_SIZE_TOP, pcx, pcx_size))) {
                         PCXHdr* hdr = (PCXHdr*) (void*) pcx;
-                        DrawBitmap(TOP_SCREEN, -1, -1, PCX_Width(hdr), PCX_Height(hdr), TEMP_BUFFER);
+                        DrawBitmap(TOP_SCREEN, -1, -1, PCX_Width(hdr), PCX_Height(hdr), bitmap);
                     } else {
                         if (strncmp(preview_str, "off", _VAR_CNT_LEN) == 0) preview_str = "(preview disabled)";
                         DrawStringCenter(TOP_SCREEN, COLOR_STD_FONT, COLOR_STD_BG, preview_str);
                     }
+                    if (pcx) free(pcx);
+                    if (bitmap) free(bitmap);
                     preview_mode = 0;
                 }
                 preview_mode_local = preview_mode;
@@ -1673,7 +1713,7 @@ bool ExecuteGM9Script(const char* path_script) {
         
         // run command
         char err_str[_ERR_STR_LEN+1] = { 0 };
-        bool result = run_line(ptr, line_end, &flags, err_str, false);
+        result = run_line(ptr, line_end, &flags, err_str, false);
         
         
         // skip state handling
@@ -1725,7 +1765,10 @@ bool ExecuteGM9Script(const char* path_script) {
                     ShowPrompt(false, "%s\nline %lu: %s\n%s", path_str, lno, err_str, line_str);
                 }
             }
-            if (!(flags & _FLG('o'))) return false; // failed if not optional
+            if (!(flags & _FLG('o'))) { // failed if not optional
+                for_handler(NULL, NULL, NULL, false); // make sure we don't have an open 'for'
+                break;
+            } else result = true; // set back the result otherwise
         }
         
         // reposition pointer
@@ -1745,19 +1788,26 @@ bool ExecuteGM9Script(const char* path_script) {
         }
     }
     
-    // check for unresolved if here
-    if (ifcnt) {
-        ShowPrompt(false, "%s\nend of script: unresolved 'if'", path_str);
-        return false;
-    } else if (for_ptr) {
-        ShowPrompt(false, "%s\nend of script: unresolved 'for'", path_str);
-        for_handler(NULL, NULL, NULL, false);
-        return false;
+    
+    if (result) { // all fine(?) up to this point
+        if (ifcnt) { // check for unresolved 'if'
+            ShowPrompt(false, "%s\nend of script: unresolved 'if'", path_str);
+            result = false;
+        }
+        if (for_ptr) { // check for unresolved 'for'
+            ShowPrompt(false, "%s\nend of script: unresolved 'for'", path_str);
+            for_handler(NULL, NULL, NULL, false);
+            result = false;
+        }
     }
     
-    // success message if applicable
-    char* msg_okay = get_var("SUCCESSMSG", NULL);
-    if (msg_okay && *msg_okay) ShowPrompt(false, msg_okay);
+    if (result) { // success message if applicable
+        char* msg_okay = get_var("SUCCESSMSG", NULL);
+        if (msg_okay && *msg_okay) ShowPrompt(false, msg_okay);
+    }
     
-    return true;
+    
+    free(var_buffer);
+    free(script_buffer);
+    return result;
 }
