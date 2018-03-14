@@ -443,7 +443,7 @@ bool ShowPrompt(bool ask, const char *format, ...)
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-	if (EnableMultiThread) InputCheck(1);
+	if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
     
     return ret;
 }
@@ -596,7 +596,7 @@ u32 ShowSelectPrompt(u32 n, const char** options, const char *format, ...) {
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-	if (EnableMultiThread) InputCheck(1);
+	if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
     
     return (sel >= n) ? 0 : sel + 1;
 }
@@ -741,7 +741,7 @@ bool ShowInputPrompt(char* inputstr, u32 max_size, u32 resize, const char* alpha
         (*cc == ' ') && (cc > inputstr); *(cc--) = '\0');
     
     ClearScreenF(true, false, COLOR_STD_BG);
-	if (EnableMultiThread) InputCheck(1);
+	if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
     
     return ret;
 }
@@ -755,7 +755,7 @@ bool ShowStringPrompt(char* inputstr, u32 max_size, const char *format, ...) {
     ret = ShowInputPrompt(inputstr, max_size, 1, alphabet, format, va);
     va_end(va);
     
-	if (EnableMultiThread) InputCheck(1);
+	if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
     return ret; 
 }
 
@@ -774,7 +774,7 @@ u64 ShowHexPrompt(u64 start_val, u32 n_digits, const char *format, ...) {
     } else ret = (u64) -1;
     va_end(va);
     
-	if (EnableMultiThread) InputCheck(1);
+	if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
     return ret; 
 }
 
@@ -792,7 +792,7 @@ u64 ShowNumberPrompt(u64 start_val, const char *format, ...) {
     } else ret = (u64) -1;
     va_end(va);
     
-	if (EnableMultiThread) InputCheck(1);
+	if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
     return ret; 
 }
 
@@ -820,7 +820,7 @@ bool ShowDataPrompt(u8* data, u32* size, const char *format, ...) {
     }
     va_end(va);
     
-	if (EnableMultiThread) InputCheck(1);
+	if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
     return ret; 
 }
 
@@ -890,7 +890,7 @@ bool ShowRtcSetterPrompt(void* time, const char *format, ...) {
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (EnableMultiThread) InputCheck(1);
+    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
 	
     return ret;
 }
@@ -979,7 +979,10 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     if (!current || last_prog_width > prog_width)
         DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, bar_width, bar_height, COLOR_STD_BG);
 
-    DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, prog_width, bar_height, COLOR_STD_FONT);
+	if (prog_width && *BOT_SCREEN != 0xFF) // draw the bar fully
+		DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, prog_width, bar_height, COLOR_STD_FONT);
+	else // draw only the bar added from previous drawing
+		DrawRectangle(MAIN_SCREEN, last_prog_width, bar_pos_y, prog_width - last_prog_width, bar_height, COLOR_STD_FONT);
     
     TruncateString(progstr, opstr, (bar_width / FONT_WIDTH_EXT) - 7, 8);
     snprintf(tempstr, 64, "%s (%lu%%)", progstr, prog_percent);
@@ -999,21 +1002,21 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     
     // Multi threading(handle user input in background)
     u64 time_cur = timer_msec(timer);
+	u32 exit_mode = GODMODE_NO_EXIT;
     if ((time_cur + last_file_end) >= (last_msec + INTERVAL_SCROLL)) {
-        BGInputChecking = true;
-        GM9HandleUserInput();
-        BGInputChecking = false;
-        last_msec += INTERVAL_SCROLL;
+        exit_mode = GM9HandleUserInput(true);
+        last_msec == (time_cur + last_file_end);
     }
     // new pressed button detecting
-    if (InputCheck(2)) {
-        BGInputChecking = true;
-        GM9HandleUserInput();
-        BGInputChecking = false;
+    if (InputCheck(MODE_DETECT_NEW)) {
+        exit_mode = GM9HandleUserInput(true);
     }
+	InputCheck(MODE_UPDATE);
+	// exit confirmation
+	if (exit_mode != GODMODE_NO_EXIT && ShowPrompt(true, "You have a background file operation\nrunning.\nDo you really want to %s?",
+		(exit_mode == GODMODE_EXIT_POWEROFF) ? "shutdown" : "reboot")) (exit_mode == GODMODE_EXIT_POWEROFF) ? PowerOff() : Reboot(); 
     last_file_msec = time_cur;
     
-	if (EnableMultiThread) InputCheck(1);
     if ((HID_STATE & BUTTON_B) && (HID_STATE & BUTTON_SELECT)) return false; // press B+Select to cancel
     
     return true; // currently don't allow cancelling
@@ -1021,7 +1024,7 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
 
 // Multi thread enable/disable
 inline bool ShowProgress(u64 current, u64 total, const char* opstr) {
-    if (EnableMultiThread) return ShowProgress_mt(current, total, opstr);
+    if (isMTmodEnabled()) return ShowProgress_mt(current, total, opstr);
     else {
 		ShowProgress_org(0, 0, opstr); // re-render the frame
 		return ShowProgress_org(current, total, opstr);

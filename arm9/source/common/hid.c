@@ -52,7 +52,7 @@ u32 InputCheck(u32 mode) {
 	static u32 cart_state_old = 0;
 	static u32 sd_state_old = 0;
 	static u32 pad_state_old = 0;
-	if (mode == 1) {
+	if (mode == MODE_UPDATE) {
 		cart_state_old = CART_STATE;
 		sd_state_old = SD_STATE;
 		pad_state_old = HID_STATE;
@@ -60,9 +60,9 @@ u32 InputCheck(u32 mode) {
 	}
 	
 	u32 pad_state;
-	if (mode == 0) {
+	if (mode == MODE_ARROW_NEW) {
 		pad_state = ~(pad_state_old & ~(BUTTON_ARROW)) & HID_STATE;
-	} else {
+	} else { // MODE_DETECT_NEW
 		pad_state = ~(pad_state_old) & HID_STATE;
 	}
 	

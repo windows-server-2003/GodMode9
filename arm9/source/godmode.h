@@ -7,5 +7,5 @@
 #define GODMODE_NO_EXIT         2
 
 u32 GodMode(int entrypoint);
-u8 GM9HandleUserInput();
+u8 GM9HandleUserInput(bool BGTask);
 u32 ScriptRunner(int entrypoint);

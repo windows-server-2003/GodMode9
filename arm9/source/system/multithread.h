@@ -4,5 +4,5 @@
 
 #define INTERVAL_SCROLL 170
 
-bool EnableMultiThread;
-bool BGInputChecking;
+bool isMTmodEnabled();
+void setMTmodEnabled(bool enable);

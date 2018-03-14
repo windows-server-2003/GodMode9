@@ -18,6 +18,8 @@
 
 #define _MAX_FS_OPT     8 // max file selector options
 
+#define FS_BUFFER_SIZE (isMTmodEnabled() ? 0x1000 : STD_BUFFER_SIZE)
+
 // Volume2Partition resolution table
 PARTITION VolToPart[] = {
     {0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0},
@@ -79,10 +81,10 @@ bool FormatSDCard(u64 hidden_mb, u32 cluster_size, const char* label) {
     InitSDCardFS();
     UINT c_size = cluster_size;
     
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) bkpt; // will not happen
-    bool ret = ((f_mkfs("0:", FM_FAT32, c_size, buffer, STD_BUFFER_SIZE) == FR_OK) || 
-        (f_mkfs("0:", FM_FAT32, 0, buffer, STD_BUFFER_SIZE) == FR_OK)) &&
+    bool ret = ((f_mkfs("0:", FM_FAT32, c_size, buffer, FS_BUFFER_SIZE) == FR_OK) || 
+        (f_mkfs("0:", FM_FAT32, 0, buffer, FS_BUFFER_SIZE) == FR_OK)) &&
         (f_setlabel((label) ? label : "0:GM9SD") == FR_OK);
     free(buffer);
     
@@ -98,9 +100,9 @@ bool SetupBonusDrive(void) {
     ShowString("Formatting drive, please wait...");
     if (GetMountState() & IMG_NAND) InitImgFS(NULL);
     
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) bkpt;
-    bool ret = (f_mkfs("8:", FM_ANY, 0, buffer, STD_BUFFER_SIZE) == FR_OK);
+    bool ret = (f_mkfs("8:", FM_ANY, 0, buffer, FS_BUFFER_SIZE) == FR_OK);
     free(buffer);
     
     if (ret) {
@@ -163,7 +165,7 @@ bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
     if (!size) size = fsize - offset;
     fvx_lseek(&file, offset);
     
-    u32 bufsiz = min(STD_BUFFER_SIZE, fsize);
+    u32 bufsiz = min(FS_BUFFER_SIZE, fsize);
     u8* buffer = (u8*) malloc(bufsiz);
     if (!buffer) return false;
     
@@ -196,7 +198,7 @@ u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
     if (fvx_open(&file, path, FA_READ | FA_OPEN_EXISTING) != FR_OK)
         return found;
     
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) return false;
     
     // main routine
@@ -205,8 +207,8 @@ u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
         u64 pos = (pass == 0) ? offset_file : 0;
         u64 search_end = (pass == 0) ? fsize : offset_file + size_data;
         search_end = (search_end > fsize) ? fsize : search_end;
-        for (; (pos < search_end) && (found == (u64) -1); pos += STD_BUFFER_SIZE - (size_data - 1)) {
-            UINT read_bytes = min(STD_BUFFER_SIZE, search_end - pos);
+        for (; (pos < search_end) && (found == (u64) -1); pos += FS_BUFFER_SIZE - (size_data - 1)) {
+            UINT read_bytes = min(FS_BUFFER_SIZE, search_end - pos);
             UINT btr;
             fvx_lseek(&file, pos);
             if ((fvx_read(&file, buffer, read_bytes, &btr) != FR_OK) || (btr != read_bytes))
@@ -269,13 +271,13 @@ bool FileInjectFile(const char* dest, const char* orig, u64 off_dest, u64 off_or
         return false;
     }
     
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) return false;
     
     bool ret = true;
     ShowProgress(0, 0, orig);
-    for (u64 pos = 0; (pos < size) && ret; pos += STD_BUFFER_SIZE) {
-        UINT read_bytes = min(STD_BUFFER_SIZE, size - pos);
+    for (u64 pos = 0; (pos < size) && ret; pos += FS_BUFFER_SIZE) {
+        UINT read_bytes = min(FS_BUFFER_SIZE, size - pos);
         UINT bytes_read = read_bytes;
         UINT bytes_written = read_bytes;
         if ((fvx_read(&ofile, buffer, read_bytes, &bytes_read) != FR_OK) ||
@@ -319,7 +321,7 @@ bool FileSetByte(const char* dest, u64 offset, u64 size, u8 fillbyte, u32* flags
         return false;
     }
     
-    u32 bufsiz = min(STD_BUFFER_SIZE, size);
+    u32 bufsiz = min(FS_BUFFER_SIZE, size);
     u8* buffer = (u8*) malloc(bufsiz);
     if (!buffer) return false;
     memset(buffer, fillbyte, bufsiz);
@@ -648,7 +650,7 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         if (flags && (*flags & BUILD_PATH)) fvx_rmkpath(ldest);
         
         // setup buffer
-        u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+        u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
         if (!buffer) {
             ShowPrompt(false, "Out of memory.");
             return false;
@@ -656,7 +658,7 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         
         // actual move / copy operation
         bool same_drv = (strncasecmp(lorig, ldest, 2) == 0);
-        bool res = PathMoveCopyRec(ldest, lorig, flags, move && same_drv, buffer, STD_BUFFER_SIZE);
+        bool res = PathMoveCopyRec(ldest, lorig, flags, move && same_drv, buffer, FS_BUFFER_SIZE);
         if (move && res && (!flags || !(*flags&SKIP_CUR))) PathDelete(lorig);
         
         free(buffer);
@@ -687,7 +689,7 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         }
         
         // setup buffer
-        u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+        u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
         if (!buffer) {
             ShowPrompt(false, "Out of memory.");
             return false;
@@ -695,7 +697,7 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         
         // actual virtual copy operation
         if (force_unmount) DismountDriveType(DriveType(ldest)&(DRV_SYSNAND|DRV_EMUNAND|DRV_IMAGE));
-        bool res = PathMoveCopyRec(ldest, lorig, flags, false, buffer, STD_BUFFER_SIZE);
+        bool res = PathMoveCopyRec(ldest, lorig, flags, false, buffer, FS_BUFFER_SIZE);
         if (force_unmount) InitExtFS();
         
         free(buffer);
