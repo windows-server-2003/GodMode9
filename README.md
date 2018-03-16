@@ -19,13 +19,15 @@ Further customization is possible by hardcoding `aeskeydb.bin` (just put the fil
 
 To build a .firm signed with SPI boot keys (for ntrboot and the like), run `make NTRBOOT=1`. You may need to rename the output files if the ntrboot installer you use uses hardcoded filenames. Some features such as boot9 / boot11 access are not currently available from the ntrboot environment.
 
+## Usage
+Most usage is the same as the original [GodMode9](https://github.com/d0k3/GodMode9).
+If MTmod is enabled(default), you can press X+Y to cancel a background operation.
 
 ## License
 You may use this under the terms of the GNU General Public License GPL v2 or under the terms of any later revisions of the GPL. Refer to the provided `LICENSE.txt` file for further information.
 
-
 ## Credits
-This mod cannot be made without original [GodMode9](https://gitub.com/d0k3/GodMode9). Thanks for all contribution to it.
+This mod could not be made without original [GodMode9](https://gitub.com/d0k3/GodMode9). Thanks for all contribution to it.
 * **d0k3**, for originally developing GodMode9
 * **Archshift**, for providing the base project infrastructure
 * **Normmatt**, for sdmmc.c / sdmmc.h and gamecart code, and for being of great help on countless other occasions
