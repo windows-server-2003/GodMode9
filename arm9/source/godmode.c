@@ -1179,13 +1179,17 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == inject) { // -> inject data from clipboard
+		if (isBG) {
+			ShowPrompt(false, "Another file operation is running!!\nCan't inject.");
+			return 0;
+		}
         char origstr[18 + 1];
         TruncateString(origstr, clipboard->entry[0].name, 18, 10);
         u64 offset = ShowHexPrompt(0, 8, "Inject data from %s?\nSpecifiy offset below.", origstr);
         if (offset != (u64) -1) {
+            clipboard->n_entries = 0;
             if (!FileInjectFile(file_path, clipboard->entry[0].path, (u32) offset, 0, 0, NULL))
                 ShowPrompt(false, "Failed injecting %s", origstr);
-            clipboard->n_entries = 0;
         }
         return 0;
     }
@@ -1742,6 +1746,12 @@ u32 HomeMoreMenu(char* current_path, bool isBG) {
     
     int user_select = ShowSelectPrompt(n_opt, optionstr, promptstr);
     if (user_select == sdformat) { // format SD card
+        if (isBG && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
+            (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
+            DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
+                if (!ShowPrompt(true, "The file operation will be cancelled.\nDo you really want to unmount SD?"))
+                    return GODMODE_NO_EXIT;
+        }
         bool sd_state = CheckSDMountState();
         if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE)))
             clipboard->n_entries = 0; // remove SD clipboard entries
@@ -2197,10 +2207,10 @@ u8 GM9HandleUserInput (u8 mode) {
                 while (!InitSDCardFS() &&
                     ShowPrompt(true, "Initialising SD card failed! Retry?"));
             } else {
-                if (isBG && clipboard_cur->n_entries && (DriveType(clipboard->entry[0].path) &
+                if (isBG && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
                     (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
                     DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
-                    if (!ShowPrompt(true, "You have a background file\noperation that read/write to/from SD.\n \nDo you really want to unmount SD?"))
+                    if (!ShowPrompt(true, "The file operation will be cancelled.\nDo you really want to unmount SD?"))
                         return GODMODE_NO_EXIT;
                 }
                 DeinitSDCardFS();
@@ -2319,7 +2329,7 @@ u8 GM9HandleUserInput (u8 mode) {
             } else if ((curr_drvtype & DRV_CART) && (pad_state & BUTTON_Y)) {
                 ShowPrompt(false, "Not allowed in gamecart drive");
             } else if (isBG && (pad_state & BUTTON_Y)) {
-                ShowPrompt(false, "Another file operation is running in background");
+                ShowPrompt(false, "Another file operation is running in background\nCan't continue.");
             } else if (pad_state & BUTTON_Y) { // paste files
                 const char* optionstr[2] = { "Copy path(s)", "Move path(s)" };
                 char promptstr[64];
@@ -2333,9 +2343,10 @@ u8 GM9HandleUserInput (u8 mode) {
                 user_select = ((DriveType(clipboard->entry[0].path) & curr_drvtype & DRV_STDFAT)) ?
                     ShowSelectPrompt(2, optionstr, promptstr) : (ShowPrompt(true, promptstr) ? 1 : 0);
                     
-                // backup current clipboard and current path because they can be changed by user while the operation
+                // backup current clipboard and current path
                 memcpy(clipboard_cur, clipboard, 0x78000);
                 snprintf(current_path_cur, 255, current_path);
+                clipboard->n_entries = 0;
                 
                 if (user_select) {
                     for (u32 c = 0; c < clipboard_cur->n_entries; c++) {
@@ -2353,7 +2364,6 @@ u8 GM9HandleUserInput (u8 mode) {
                             } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
                         }
                     }
-                    clipboard->n_entries = 0;
                     GetDirContents(current_dir, current_path);
                 }
                 ClearScreenF(true, false, COLOR_STD_BG);
@@ -2363,8 +2373,6 @@ u8 GM9HandleUserInput (u8 mode) {
                 ShowPrompt(false, "Not allowed in virtual path");
             } else if ((curr_drvtype & DRV_ALIAS) && (pad_state & (BUTTON_X))) {
                 ShowPrompt(false, "Not allowed in alias path");
-            } else if (isBG && (pad_state & (BUTTON_X))) {
-                ShowPrompt(false, "Another file operation is running in background");
             } else if ((pad_state & BUTTON_X) && (curr_entry->type != T_DOTDOT)) { // rename a file
                 char newname[256];
                 char namestr[20+1];
