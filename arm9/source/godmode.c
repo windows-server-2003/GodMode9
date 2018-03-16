@@ -9,6 +9,7 @@
 #include "virtual.h"
 #include "vcart.h"
 #include "game.h"
+#include "disadiff.h"
 #include "unittype.h"
 #include "entrypoints.h"
 #include "bootfirm.h"
@@ -438,7 +439,7 @@ u32 FileGraphicsViewer(const char* path) {
         ClearScreenF(true, true, COLOR_STD_BG);
         DrawBitmap(ALT_SCREEN, -1, -1, w, h, bitmap);
         ShowString("Press <A> to continue");
-        InputWait(0);
+        while(!(InputWait(0) & (BUTTON_A | BUTTON_B)));
         ClearScreenF(true, true, COLOR_STD_BG);
     } else ret = 1;
     
@@ -465,6 +466,7 @@ u32 FileHexViewer(const char* path) {
     u32 last_offset = (u32) -1;
     u32 offset = 0;
     
+    u8  found_data[64 + 1] = { 0 };
     u32 found_offset = (u32) -1;
     u32 found_size = 0;
     
@@ -622,7 +624,7 @@ u32 FileHexViewer(const char* path) {
             if (x_off >= 0) DrawStringF(screen, x_off - x0, y, cutoff ? COLOR_HVOFFS : COLOR_HVOFFSI,
                 COLOR_STD_BG, "%08X", (unsigned int) offset + curr_pos);
             if (x_ascii >= 0) {
-                DrawString(screen, ascii, x_ascii - x0, y, COLOR_HVASCII, COLOR_STD_BG);
+                DrawString(screen, ascii, x_ascii - x0, y, COLOR_HVASCII, COLOR_STD_BG, false);
                 for (u32 i = marked0; i < marked1; i++)
                     DrawCharacter(screen, ascii[i % cols], x_ascii - x0 + (FONT_WIDTH_EXT * i), y, COLOR_MARKED, COLOR_STD_BG);
                 if (edit_mode && ((u32) cursor / cols == row)) DrawCharacter(screen, ascii[cursor % cols],
@@ -642,8 +644,7 @@ u32 FileHexViewer(const char* path) {
         
         // handle user input
         u32 pad_state = InputWait(0);
-        if ((pad_state & BUTTON_R1) && (pad_state & BUTTON_L1)) CreateScreenshot();
-        else if (!edit_mode) { // standard viewer mode
+        if (!edit_mode) { // standard viewer mode
             u32 step_ud = (pad_state & BUTTON_R1) ? (0x1000  - (0x1000  % cols)) : cols;
             u32 step_lr = (pad_state & BUTTON_R1) ? (0x10000 - (0x10000 % cols)) : total_shown;
             if (pad_state & BUTTON_DOWN) offset += step_ud;
@@ -654,9 +655,7 @@ u32 FileHexViewer(const char* path) {
             else if ((pad_state & BUTTON_A) && total_data) edit_mode = true;
             else if (pad_state & (BUTTON_B|BUTTON_START)) break;
             else if (found_size && (pad_state & BUTTON_R1) && (pad_state & BUTTON_X)) {
-                u8 data[64] = { 0 };
-                FileGetData(path, data, found_size, found_offset);
-                found_offset = FileFindData(path, data, found_size, found_offset + 1);
+                found_offset = FileFindData(path, found_data, found_size, found_offset + 1);
                 if (found_offset == (u32) -1) {
                     ShowPrompt(false, "Not found!");
                     found_size = 0;
@@ -673,23 +672,20 @@ u32 FileHexViewer(const char* path) {
                         (unsigned int) offset);
                     if (new_offset != (u64) -1) offset = new_offset;
                 } else if (user_select == 2) {
-                    char string[64 + 1] = { 0 };
-                    if (found_size) FileGetData(path, (u8*) string, (found_size <= 64) ? found_size : 64, found_offset);
-                    if (ShowStringPrompt(string, 64 + 1, "Enter search string below.\n(R+X to repeat search)", (unsigned int) offset)) {
-                        found_size = strnlen(string, 64);
-                        found_offset = FileFindData(path, (u8*) string, found_size, offset);
+                    if (!found_size) *found_data = 0;
+                    if (ShowStringPrompt((char*) found_data, 64 + 1, "Enter search string below.\n(R+X to repeat search)", (unsigned int) offset)) {
+                        found_size = strnlen((char*) found_data, 64);
+                        found_offset = FileFindData(path, found_data, found_size, offset);
                         if (found_offset == (u32) -1) {
                             ShowPrompt(false, "Not found!");
                             found_size = 0;
                         } else offset = found_offset;
                     }
                 } else if (user_select == 3) {
-                    u8 data[64] = { 0 };
-                    u32 size = 0;
-                    if (found_size) size = FileGetData(path, data, (found_size <= 64) ? found_size : 64, found_offset);
-                    if (ShowDataPrompt(data, &size, "Enter search data below.\n(R+X to repeat search)", (unsigned int) offset)) {
+                    u32 size = found_size;
+                    if (ShowDataPrompt(found_data, &size, "Enter search data below.\n(R+X to repeat search)", (unsigned int) offset)) {
                         found_size = size;
-                        found_offset = FileFindData(path, data, size, offset);
+                        found_offset = FileFindData(path, found_data, size, offset);
                         if (found_offset == (u32) -1) {
                             ShowPrompt(false, "Not found!");
                             found_size = 0;
@@ -1002,7 +998,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     u64 filetype = IdentifyFileType(file_path);
     u32 drvtype = DriveType(file_path);
     
-    bool in_output_path = (strncmp(current_path, OUTPUT_PATH, 256) == 0);
+    bool in_output_path = (strncasecmp(current_path, OUTPUT_PATH, 256) == 0);
     
     // don't handle TMDs inside the game drive, won't work properly anyways
     if ((filetype & GAME_TMD) && (drvtype & DRV_GAME)) filetype &= ~GAME_TMD;
@@ -1024,6 +1020,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     bool transferable = (FTYPE_TRANSFERABLE(filetype) && IS_A9LH && (drvtype & DRV_FAT));
     bool hsinjectable = (FTYPE_HASCODE(filetype));
     bool extrcodeable = (FTYPE_HASCODE(filetype));
+    bool extrdiffable = (FTYPE_ISDISADIFF(filetype));
     bool restorable = (FTYPE_RESTORABLE(filetype) && IS_A9LH && !(drvtype & DRV_SYSNAND));
     bool ebackupable = (FTYPE_EBACKUP(filetype));
     bool ncsdfixable = (FTYPE_NCSDFIXABLE(filetype));
@@ -1047,7 +1044,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         extrcodeable = (FTYPE_HASCODE(filetype_cxi));
     }
     
-    bool special_opt = mountable || verificable || decryptable || encryptable || cia_buildable || cia_buildable_legit || cxi_dumpable || tik_buildable || key_buildable || titleinfo || renamable || transferable || hsinjectable || restorable || xorpadable || ebackupable || ncsdfixable || extrcodeable || keyinitable || keyinstallable || bootable || scriptable || fontable || viewable || installable || agbexportable || agbimportable;
+    bool special_opt = mountable || verificable || decryptable || encryptable || cia_buildable || cia_buildable_legit || cxi_dumpable || tik_buildable || key_buildable || titleinfo || renamable || transferable || hsinjectable || restorable || xorpadable || ebackupable || ncsdfixable || extrcodeable || extrdiffable || keyinitable || keyinstallable || bootable || scriptable || fontable || viewable || installable || agbexportable || agbimportable;
     
     char pathstr[32+1];
     TruncateString(pathstr, file_path, 32, 8);
@@ -1091,7 +1088,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         (filetype & GAME_3DSX)  ? "Show 3DSX title info"  :
         (filetype & SYS_FIRM  ) ? "FIRM image options..." :
         (filetype & SYS_AGBSAVE)? (agbimportable) ? "AGBSAVE options..." : "Dump GBA VC save" :
-        (filetype & SYS_TICKDB) ? (tik_buildable) ? "Ticket.db options..." : "Mount as ticket.db" :
+        (filetype & SYS_TICKDB) ? "Ticket.db options..."  :
+        (filetype & SYS_DIFF)   ? "Extract DIFF data"     :
         (filetype & BIN_TIKDB)  ? "Titlekey options..."   :
         (filetype & BIN_KEYDB)  ? "AESkeydb options..."   :
         (filetype & BIN_LEGKEY) ? "Build " KEYDB_NAME     :
@@ -1237,6 +1235,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     int ctrtransfer = (transferable) ? ++n_opt : -1;
     int hsinject = (hsinjectable) ? ++n_opt : -1;
     int extrcode = (extrcodeable) ? ++n_opt : -1;
+    int extrdiff = (extrdiffable) ? ++n_opt : -1;
     int rename = (renamable) ? ++n_opt : -1;
     int xorpad = (xorpadable) ? ++n_opt : -1;
     int xorpad_inplace = (xorpadable) ? ++n_opt : -1;
@@ -1269,6 +1268,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     if (xorpad > 0) optionstr[xorpad-1] = "Build XORpads (SD output)";
     if (xorpad_inplace > 0) optionstr[xorpad_inplace-1] = "Build XORpads (inplace)";
     if (extrcode > 0) optionstr[extrcode-1] = "Extract " EXEFS_CODE_NAME;
+    if (extrdiff > 0) optionstr[extrdiff-1] = "Extract DIFF data";
     if (keyinit > 0) optionstr[keyinit-1] = "Init " KEYDB_NAME;
     if (keyinstall > 0) optionstr[keyinstall-1] = "Install " KEYDB_NAME;
     if (install > 0) optionstr[install-1] = "Install FIRM";
@@ -1343,10 +1343,11 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
                 DrawDirContents(current_dir, (*cursor = i), scroll);
                 if (!(filetype & BIN_KEYDB) && (CryptGameFile(path, inplace, false) == 0)) n_success++;
                 else if ((filetype & BIN_KEYDB) && (CryptAesKeyDb(path, inplace, false) == 0)) n_success++;
-                else { // on failure: show error, break
-                    TruncateString(pathstr, path, 32, 8);
-                    ShowPrompt(false, "%s\nDecryption failed", pathstr);
-                    break;
+                else { // on failure: show error, continue
+                    char lpathstr[32+1];
+                    TruncateString(lpathstr, path, 32, 8);
+                    if (ShowPrompt(true, "%s\nDecryption failed\n \nContinue?", lpathstr)) continue;
+                    else break;
                 }
                 current_dir->entry[i].marked = false;
             }
@@ -1391,10 +1392,11 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
                 DrawDirContents(current_dir, (*cursor = i), scroll);
                 if (!(filetype & BIN_KEYDB) && (CryptGameFile(path, inplace, true) == 0)) n_success++;
                 else if ((filetype & BIN_KEYDB) && (CryptAesKeyDb(path, inplace, true) == 0)) n_success++;
-                else { // on failure: show error, break
-                    TruncateString(pathstr, path, 32, 8);
-                    ShowPrompt(false, "%s\nEncryption failed", pathstr);
-                    break;
+                else { // on failure: show error, continue
+                    char lpathstr[32+1];
+                    TruncateString(lpathstr, path, 32, 8);
+                    if (ShowPrompt(true, "%s\nEncryption failed\n \nContinue?", lpathstr)) continue;
+                    else break;
                 }
                 current_dir->entry[i].marked = false;
             }
@@ -1428,10 +1430,11 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
                 DrawDirContents(current_dir, (*cursor = i), scroll);
                 if (((user_select != cxi_dump) && (BuildCiaFromGameFile(path, force_legit) == 0)) ||
                     ((user_select == cxi_dump) && (DumpCxiSrlFromTmdFile(path) == 0))) n_success++;
-                else { // on failure: show error, break
-                    TruncateString(pathstr, path, 32, 8);
-                    ShowPrompt(false, "%s\nBuild %s failed", pathstr, type);
-                    break;
+                else { // on failure: show error, continue
+                    char lpathstr[32+1];
+                    TruncateString(lpathstr, path, 32, 8);
+                    if (ShowPrompt(true, "%s\nBuild %s failed\n \nContinue?", lpathstr, type)) continue;
+                    else break;
                 }
                 current_dir->entry[i].marked = false;
             }
@@ -1452,7 +1455,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     else if (user_select == verify) { // -> verify game / nand file
         if ((n_marked > 1) && ShowPrompt(true, "Try to verify all %lu selected files?", n_marked)) {
             u32 n_success = 0;
-            u32 n_other = 0; 
+            u32 n_other = 0;
             u32 n_processed = 0;
             for (u32 i = 0; i < current_dir->n_entries; i++) {
                 const char* path = current_dir->entry[i].path;
@@ -1467,10 +1470,13 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
                 DrawDirContents(current_dir, (*cursor = i), scroll);
                 if ((filetype & IMG_NAND) && (ValidateNandDump(path) == 0)) n_success++;
                 else if (VerifyGameFile(path) == 0) n_success++;
-                else { // on failure: show error, break
-                    TruncateString(pathstr, path, 32, 8);
-                    ShowPrompt(false, "%s\nVerification failed", pathstr);
-                    break;
+                else { // on failure: show error, continue
+                    char lpathstr[32+1];
+                    TruncateString(lpathstr, path, 32, 8);
+                    if (ShowPrompt(true, "%s\nVerification failed\n \nContinue?", lpathstr)) {
+                        if (!(filetype & (GAME_CIA|GAME_TMD))) ShowProgress(0, n_marked, path); // restart progress bar
+                        continue;
+                    } else break;
                 }
                 current_dir->entry[i].marked = false;
             }
@@ -1583,12 +1589,51 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         }
         return 0;
     }
-    else if (user_select == extrcode) { // -> Extract code
-        char extstr[8] = { 0 };
-        ShowString("%s\nExtracting .code, please wait...", pathstr);
-        if (ExtractCodeFromCxiFile((filetype & GAME_TMD) ? cxi_path : file_path, NULL, extstr) == 0) {
-            ShowPrompt(false, "%s\n%s extracted to " OUTPUT_PATH, pathstr, extstr);
-        } else ShowPrompt(false, "%s\n.code extract failed", pathstr);
+    else if ((user_select == extrcode) || (user_select == extrdiff)) { // -> Extract .code or DIFF partition
+        if ((n_marked > 1) && ShowPrompt(true, "Try to extract all %lu selected files?", n_marked)) {
+            u32 n_success = 0;
+            u32 n_other = 0;
+            u32 n_processed = 0;
+            for (u32 i = 0; i < current_dir->n_entries; i++) {
+                const char* path = current_dir->entry[i].path;
+                if (!current_dir->entry[i].marked) 
+                    continue;
+                if (!ShowProgress(n_processed++, n_marked, path)) break;
+                if (!(IdentifyFileType(path) & filetype & TYPE_BASE)) {
+                    n_other++;
+                    continue;
+                }
+                DrawDirContents(current_dir, (*cursor = i), scroll);
+                if (filetype & SYS_DIFF) {
+                    if (ExtractDataFromDisaDiff(path) == 0) n_success++;
+                    else continue;
+                } else if (filetype & GAME_TMD) {
+                    char cxi_pathl[256] = { 0 };
+                    if ((GetTmdContentPath(cxi_pathl, path) == 0) && PathExist(cxi_pathl) && 
+                        (ExtractCodeFromCxiFile(cxi_pathl, NULL, NULL) == 0)) {
+                        n_success++;
+                    } else continue;
+                } else {
+                    if (ExtractCodeFromCxiFile(path, NULL, NULL) == 0) n_success++;
+                    else continue;
+                }
+                current_dir->entry[i].marked = false;
+            }
+            if (n_other) ShowPrompt(false, "%lu/%lu files extracted ok\n%lu/%lu not of same type",
+                n_success, n_marked, n_other, n_marked);
+            else ShowPrompt(false, "%lu/%lu files extracted ok", n_success, n_marked); 
+        } else if (filetype & SYS_DIFF) {
+            ShowString("%s\nExtracting data, please wait...", pathstr);
+            if (ExtractDataFromDisaDiff(file_path) == 0) {
+                ShowPrompt(false, "%s\ndata extracted to " OUTPUT_PATH, pathstr);
+            } else ShowPrompt(false, "%s\ndata extract failed", pathstr);
+        } else {
+            char extstr[8] = { 0 };
+            ShowString("%s\nExtracting .code, please wait...", pathstr);
+            if (ExtractCodeFromCxiFile((filetype & GAME_TMD) ? cxi_path : file_path, NULL, extstr) == 0) {
+                ShowPrompt(false, "%s\n%s extracted to " OUTPUT_PATH, pathstr, extstr);
+            } else ShowPrompt(false, "%s\n.code extract failed", pathstr);
+        }
         return 0;
     }
     else if (user_select == ctrtransfer) { // -> transfer CTRNAND image to SysNAND
@@ -1881,7 +1926,7 @@ static PaneData* pane;
 static DirEntry* curr_entry;
 static int curr_drvtype;
 static u32 last_write_perm;
-    
+
 u32 GodMode(int entrypoint) {
     u32 exit_mode = GODMODE_EXIT_REBOOT;
     last_write_perm = GetWritePermissions();
@@ -1889,15 +1934,16 @@ u32 GodMode(int entrypoint) {
     bool bootloader = IS_SIGHAX && (entrypoint == ENTRY_NANDBOOT);
     bool bootmenu = bootloader && (BOOTMENU_KEY != BUTTON_START) && CheckButton(BOOTMENU_KEY);
     bool godmode9 = !bootloader;
+    
+    // FIRM from FCRAM handling
     FirmHeader* firm_in_mem = (FirmHeader*) __FIRMTMP_ADDR; // should be safe here
-    memcpy(firm_in_mem, "NOPE", 4); // to prevent bootloops
     if (bootloader) { // check for FIRM in FCRAM, but prevent bootloops
-        for (u8* addr = (u8*) __FCRAM0_ADDR + 0x200; addr < (u8*) __HEAP_END; addr += 0x400000) { // don't search the stack
-            if (memcmp(addr - 0x200, "A9NC", 4) != 0) continue;
-            u32 firm_size = GetFirmSize((FirmHeader*) (void*) addr);
-            if (!firm_size || (firm_size > (0x400000 - 0x200))) continue;
-            if (memcmp(firm_in_mem, "FIRM", 4) != 0) memmove(firm_in_mem, addr, firm_size);
-            if (memcmp(addr, "FIRM", 4) == 0) memcpy(addr, "NOPE", 4); // prevent bootloops
+        void* addr = (void*) __FIRMRAM_ADDR;
+        u32 firm_size = GetFirmSize((FirmHeader*) addr);
+        memcpy(firm_in_mem, "NOPE", 4); // overwrite header to prevent bootloops
+        if (firm_size && (firm_size <= (__FIRMRAM_END - __FIRMRAM_ADDR))) {
+            memcpy(firm_in_mem, addr, firm_size);
+            memcpy(addr, "NOPE", 4); // to prevent bootloops
         }
     }
     
@@ -1925,6 +1971,16 @@ u32 GodMode(int entrypoint) {
     AutoEmuNandBase(true);
     InitNandCrypto(entrypoint != ENTRY_B9S);
     InitExtFS();
+    
+    // custom font handling
+    if (CheckSupportFile("font.pbm")) {
+        u8* pbm = (u8*) malloc(0x10000); // arbitrary, should be enough by far
+        if (pbm) {
+            u32 pbm_size = LoadSupportFile("font.pbm", pbm, 0x10000);
+            if (pbm_size) SetFontFromPbm(pbm, pbm_size);
+            free(pbm);
+        }
+    }
     
     // check for embedded essential backup
     if (((entrypoint == ENTRY_NANDBOOT) || (entrypoint == ENTRY_B9S)) &&
@@ -2202,7 +2258,6 @@ u8 GM9HandleUserInput (u8 mode) {
                 }
             }
         } else if (switched && (pad_state & BUTTON_B)) { // unmount SD card
-            DeinitExtFS();
             if (!CheckSDMountState()) {
                 while (!InitSDCardFS() &&
                     ShowPrompt(true, "Initialising SD card failed! Retry?"));
@@ -2214,8 +2269,7 @@ u8 GM9HandleUserInput (u8 mode) {
                         return GODMODE_NO_EXIT;
                 }
                 DeinitSDCardFS();
-                if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) &
-                    (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE)))
+                if (clipboard->n_entries && !PathExist(clipboard->entry[0].path))
                     clipboard->n_entries = 0; // remove SD clipboard entries
             }
             ClearScreenF(true, true, COLOR_STD_BG);
@@ -2254,8 +2308,7 @@ u8 GM9HandleUserInput (u8 mode) {
             for (u32 c = 1; c < current_dir->n_entries; c++) current_dir->entry[c].marked = 0;
             mark_next = 0;
         } else if (switched && (pad_state & BUTTON_L1)) { // switched L -> screenshot
-            CreateScreenshot();
-            ClearScreenF(true, true, COLOR_STD_BG);
+            // this is handled in hid.h
         } else if (*current_path && (pad_state & BUTTON_L1) && (curr_entry->type != T_DOTDOT)) {
             // unswitched L - mark/unmark single entry
             if (mark_next < -1) mark_next = -1;

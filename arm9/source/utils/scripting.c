@@ -631,6 +631,7 @@ char* find_next(char* ptr) {
 char* find_label(const char* label, const char* last_found) {
     char* script = (char*) script_buffer;
     char* ptr = script;
+    u32 label_len = strnlen(label, _ARG_MAX_LEN);
     
     if (last_found) {
         ptr = strchr(last_found, '\n');
@@ -659,7 +660,7 @@ char* find_label(const char* label, const char* last_found) {
             // compare it manually (also check for '*' at end)
             u32 pdiff = 0;
             for (; (pdiff < str_len) && (label[pdiff] == str[pdiff]); pdiff++);
-            if ((pdiff != str_len) && (label[pdiff] != '*')) continue; // no match
+            if ((pdiff < label_len) && (label[pdiff] != '*')) continue; // no match
             // otherwise: potential regular or wildcard match
             
             // may be a match, see if there are more strings after it
@@ -1393,7 +1394,7 @@ void MemTextView(const char* text, u32 len, char* line0, int off_disp, int lno, 
         if (ar) memcpy(txtstr + p_ar, ar_str, strnlen(ar_str, 16));
         
         // draw line number & text
-        DrawString(TOP_SCREEN, txtstr, x_txt, y, color_text, COLOR_STD_BG);
+        DrawString(TOP_SCREEN, txtstr, x_txt, y, color_text, COLOR_STD_BG, false);
         if (TV_LNOS > 0) { // line number
             if (ptr != ptr_next)
                 DrawStringF(TOP_SCREEN, x_lno, y, ((ptr == text) || (*(ptr-1) == '\n')) ? COLOR_TVOFFS : COLOR_TVOFFSL, COLOR_STD_BG, "%0*lu", TV_LNOS, nln);
@@ -1403,7 +1404,7 @@ void MemTextView(const char* text, u32 len, char* line0, int off_disp, int lno, 
         // colorize comment if is_script
         if ((cmt_start > 0) && ((u32) cmt_start < TV_LLEN_DISP)) {
             memset(txtstr, ' ', cmt_start);
-            DrawString(TOP_SCREEN, txtstr, x_txt, y, script_color_comment, COLOR_TRANSPARENT);
+            DrawString(TOP_SCREEN, txtstr, x_txt, y, script_color_comment, COLOR_TRANSPARENT, false);
         }
         
         // colorize arrows
@@ -1460,38 +1461,35 @@ bool MemTextViewer(const char* text, u32 len, u32 start, bool as_script) {
         
         // handle user input
         u32 pad_state = InputWait(0);
-        if ((pad_state & BUTTON_R1) && (pad_state & BUTTON_L1)) CreateScreenshot();
-        else { // standard viewer mode
-            char* line0_next = line0;
-            u32 step_ud = (pad_state & BUTTON_R1) ? TV_NLIN_DISP : 1;
-            u32 step_lr = (pad_state & BUTTON_R1) ? TV_LLEN_DISP : 1;
-            bool switched = (pad_state & BUTTON_R1);
-            if (pad_state & BUTTON_DOWN) line0_next = line_seek(text, len, ww, line0, step_ud);
-            else if (pad_state & BUTTON_UP) line0_next = line_seek(text, len, ww, line0, -step_ud);
-            else if (pad_state & BUTTON_RIGHT) off_disp += step_lr;
-            else if (pad_state & BUTTON_LEFT) off_disp -= step_lr;
-            else if (switched && (pad_state & BUTTON_X)) {
-                u64 lnext64 = ShowNumberPrompt(lcurr, "Current line: %i\nEnter new line below.", lcurr);
-                if (lnext64 && (lnext64 != (u64) -1)) line0_next = line_seek(text, len, 0, line0, (int) lnext64 - lcurr);
-                ShowString(instr);
-            } else if (switched && (pad_state & BUTTON_Y)) {
-                ww = ww ? 0 : TV_LLEN_DISP;
-                line0_next = line_seek(text, len, ww, line0, 0);
-            } else if (pad_state & (BUTTON_B|BUTTON_START)) break;
-            
-            // check for problems, apply changes
-            if (!ww && (line0_next > llast_nww)) line0_next = llast_nww;
-            else if (ww && (line0_next > llast_ww)) line0_next = llast_ww;
-            if (line0_next < line0) { // fix line number for decrease
-                do if (*(--line0) == '\n') lcurr--;
-                while (line0 > line0_next);
-            } else { // fix line number for increase / same
-                for (; line0_next > line0; line0++)
-                    if (*line0 == '\n') lcurr++;
-            }
-            if (off_disp + TV_LLEN_DISP > llen_max) off_disp = llen_max - TV_LLEN_DISP;
-            if ((off_disp < 0) || ww) off_disp = 0;
+        char* line0_next = line0;
+        u32 step_ud = (pad_state & BUTTON_R1) ? TV_NLIN_DISP : 1;
+        u32 step_lr = (pad_state & BUTTON_R1) ? TV_LLEN_DISP : 1;
+        bool switched = (pad_state & BUTTON_R1);
+        if (pad_state & BUTTON_DOWN) line0_next = line_seek(text, len, ww, line0, step_ud);
+        else if (pad_state & BUTTON_UP) line0_next = line_seek(text, len, ww, line0, -step_ud);
+        else if (pad_state & BUTTON_RIGHT) off_disp += step_lr;
+        else if (pad_state & BUTTON_LEFT) off_disp -= step_lr;
+        else if (switched && (pad_state & BUTTON_X)) {
+            u64 lnext64 = ShowNumberPrompt(lcurr, "Current line: %i\nEnter new line below.", lcurr);
+            if (lnext64 && (lnext64 != (u64) -1)) line0_next = line_seek(text, len, 0, line0, (int) lnext64 - lcurr);
+            ShowString(instr);
+        } else if (switched && (pad_state & BUTTON_Y)) {
+            ww = ww ? 0 : TV_LLEN_DISP;
+            line0_next = line_seek(text, len, ww, line0, 0);
+        } else if (pad_state & (BUTTON_B|BUTTON_START)) break;
+        
+        // check for problems, apply changes
+        if (!ww && (line0_next > llast_nww)) line0_next = llast_nww;
+        else if (ww && (line0_next > llast_ww)) line0_next = llast_ww;
+        if (line0_next < line0) { // fix line number for decrease
+            do if (*(--line0) == '\n') lcurr--;
+            while (line0 > line0_next);
+        } else { // fix line number for increase / same
+            for (; line0_next > line0; line0++)
+                if (*line0 == '\n') lcurr++;
         }
+        if (off_disp + TV_LLEN_DISP > llen_max) off_disp = llen_max - TV_LLEN_DISP;
+        if ((off_disp < 0) || ww) off_disp = 0;
     }
     
     // clear screens
@@ -1701,7 +1699,7 @@ bool ExecuteGM9Script(const char* path_script) {
         
         // run command
         char err_str[_ERR_STR_LEN+1] = { 0 };
-        bool result = run_line(ptr, line_end, &flags, err_str, false);
+        result = run_line(ptr, line_end, &flags, err_str, false);
         
         
         // skip state handling
@@ -1755,9 +1753,8 @@ bool ExecuteGM9Script(const char* path_script) {
             }
             if (!(flags & _FLG('o'))) { // failed if not optional
                 for_handler(NULL, NULL, NULL, false); // make sure we don't have an open 'for'
-                result = false; // we failed
                 break;
-            }
+            } else result = true; // set back the result otherwise
         }
         
         // reposition pointer
