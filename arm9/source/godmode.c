@@ -1713,7 +1713,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     return FileHandlerMenu(current_path, cursor, scroll, pane);
 }
 
-u32 HomeMoreMenu(char* current_path) {
+u32 HomeMoreMenu(char* current_path, bool isBG) {
     NandPartitionInfo np_info;
     if (GetNandPartitionInfo(&np_info, NP_TYPE_BONUS, NP_SUBTYPE_CTR, 0, NAND_SYSNAND) != 0) np_info.count = 0;
     
@@ -1851,11 +1851,12 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == multithread) {
-        setMTmodEnabled(!isMTmodEnabled());
+		if (isBG) ShowPrompt(false, "You can't switch it\nwhile a file operation is running");
+        else setMTmodEnabled(!isMTmodEnabled());
     }
     else return 1;
     
-    return HomeMoreMenu(current_path);
+    return HomeMoreMenu(current_path, isBG);
 }
 
 const u32 quick_stp = (MAIN_SCREEN == TOP_SCREEN) ? 20 : 19;
@@ -2061,6 +2062,7 @@ u8 GM9HandleUserInput (u8 mode) {
         if (~last_write_perm & GetWritePermissions()) {
             if (ShowPrompt(true, "Write permissions were changed.\nRelock them?")) SetWritePermissions(last_write_perm, false);
             last_write_perm = GetWritePermissions();
+            if (isBG) DrawTopBar(current_path); // change the color here
             return GODMODE_NO_EXIT;
         }
         
@@ -2423,7 +2425,7 @@ u8 GM9HandleUserInput (u8 mode) {
             while ((user_select = ShowSelectPrompt(n_opt, optionstr, "%s button pressed.\nSelect action:", buttonstr)) &&
                 (user_select != poweroff) && (user_select != reboot)) {
                 char loadpath[256];
-                if ((user_select == more) && (HomeMoreMenu(current_path) == 0)) break; // more... menu
+                if ((user_select == more) && (HomeMoreMenu(current_path, isBG) == 0)) break; // more... menu
                 else if (user_select == scripts) {
                     if (!CheckSupportDir(SCRIPTS_DIR)) {
                         ShowPrompt(false, "Scripts directory not found.\n(default path: 0:/gm9/" SCRIPTS_DIR ")");
@@ -2469,7 +2471,28 @@ u8 GM9HandleUserInput (u8 mode) {
         }
         
         if (isBG) {
-            DrawDirContents(current_dir, cursor, &scroll);
+			// basic sanity checking
+			if (!current_dir->n_entries) { // current dir is empty -> revert to root
+				ShowPrompt(false, "Invalid directory object");
+				*current_path = '\0';
+				DeinitExtFS(); // deinit and...
+				InitExtFS(); // reinitialize extended file system
+				GetDirContents(current_dir, current_path);
+				cursor = 0;
+				if (!current_dir->n_entries) { // should not happen, if it does fail gracefully
+					ShowPrompt(false, "Invalid root directory.");
+					return GODMODE_EXIT_REBOOT;
+				}
+			}
+			if (cursor >= current_dir->n_entries) // cursor beyond allowed range
+				cursor = current_dir->n_entries - 1;
+			curr_entry = &(current_dir->entry[cursor]);
+			
+			if ((mark_next >= 0) && (curr_entry->type != T_DOTDOT)) {
+				curr_entry->marked = mark_next;
+				mark_next = -2;
+			}
+			DrawDirContents(current_dir, cursor, &scroll);
             DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
             DrawTopBar(current_path);
         }

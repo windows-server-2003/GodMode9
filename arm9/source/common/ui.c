@@ -1018,7 +1018,7 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
         (exit_mode == GODMODE_EXIT_POWEROFF) ? "shutdown" : "reboot")) (exit_mode == GODMODE_EXIT_POWEROFF) ? PowerOff() : Reboot();
     last_file_msec = time_cur;
     
-    if ((HID_STATE & BUTTON_B) && (HID_STATE & BUTTON_SELECT)) return false; // press B+Select to cancel
+    if ((HID_STATE & BUTTON_X) && (HID_STATE & BUTTON_Y)) return false; // press B+Select to cancel
     
     return true; // currently don't allow cancelling
 }
