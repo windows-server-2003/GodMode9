@@ -988,7 +988,7 @@ u32 FileAttrMenu(const char* file_path) {
     }
 }
 
-u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pane) {
+u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pane, bool isBG) {
     const char* file_path = (&(current_dir->entry[*cursor]))->path;
     const char* optionstr[16];
     
@@ -1166,7 +1166,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
             }
             return 0;
         }
-        return FileHandlerMenu(current_path, cursor, scroll, pane);
+        return FileHandlerMenu(current_path, cursor, scroll, pane, isBG);
     }
     else if (user_select == fileinfo) { // -> show file info
         FileAttrMenu(file_path);
@@ -1759,7 +1759,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     
-    return FileHandlerMenu(current_path, cursor, scroll, pane);
+    return FileHandlerMenu(current_path, cursor, scroll, pane, isBG);
 }
 
 u32 HomeMoreMenu(char* current_path, bool isBG) {
@@ -2236,7 +2236,7 @@ u8 GM9HandleUserInput (u8 mode) {
                 }
             }
         } else if ((pad_state & BUTTON_A) && (curr_entry->type == T_FILE)) { // process a file
-            FileHandlerMenu(current_path, &cursor, &scroll, &pane); // processed externally
+            FileHandlerMenu(current_path, &cursor, &scroll, &pane, isBG); // processed externally
         } else if (*current_path && ((pad_state & BUTTON_B) || // one level down
             ((pad_state & BUTTON_A) && (curr_entry->type == T_DOTDOT)))) {
             if (switched) { // use R+B to return to root fast

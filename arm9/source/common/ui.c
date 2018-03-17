@@ -990,12 +990,12 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
         TruncateString(progstr, opstr, (bar_width / FONT_WIDTH_EXT) - 7, 8);
         snprintf(tempstr, 64, "%s (%lu%%)", progstr, prog_percent);
         ResizeString(progstr, tempstr, bar_width / FONT_WIDTH_EXT, 8, false);
-        DrawString(MAIN_SCREEN, progstr, bar_pos_x, text_pos_y, COLOR_STD_FONT, COLOR_STD_BG);
+        DrawString(MAIN_SCREEN, progstr, bar_pos_x, text_pos_y, COLOR_STD_FONT, COLOR_STD_BG, false);
         if (sec_elapsed >= 1) { // ETA
             snprintf(tempstr, 16, "ETA %02llum%02llus", sec_remain / 60, sec_remain % 60);
             ResizeString(progstr, tempstr, 16, 8, true);
             DrawString(MAIN_SCREEN, progstr, bar_pos_x + bar_width - 1 - (FONT_WIDTH_EXT * 16),
-                bar_pos_y - 10 - 1, COLOR_STD_FONT, COLOR_STD_BG);
+                bar_pos_y - 10 - 1, COLOR_STD_FONT, COLOR_STD_BG, false);
         }
     }
     last_prog_width = prog_width;
