@@ -2397,7 +2397,7 @@ u8 GM9HandleUserInput (u8 mode) {
                     ShowSelectPrompt(2, optionstr, promptstr) : (ShowPrompt(true, promptstr) ? 1 : 0);
                     
                 // backup current clipboard and current path
-                memcpy(clipboard_cur, clipboard, 0x78000);
+                memcpy(clipboard_cur, clipboard, sizeof(DirStruct));
                 snprintf(current_path_cur, 255, current_path);
                 clipboard->n_entries = 0;
                 
@@ -2508,7 +2508,7 @@ u8 GM9HandleUserInput (u8 mode) {
             if (user_select == poweroff)
                 return GODMODE_EXIT_POWEROFF;
             else if (user_select == reboot)
-                return GODMODE_EXIT_POWEROFF;
+                return GODMODE_EXIT_REBOOT;
         } else if (pad_state & (CART_INSERT|CART_EJECT)) {
             if (!InitVCartDrive() && (pad_state & CART_INSERT)) // reinit virtual cart drive
                 ShowPrompt(false, "Cart init failed!");
