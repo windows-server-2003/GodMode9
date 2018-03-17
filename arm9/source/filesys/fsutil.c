@@ -18,7 +18,7 @@
 
 #define _MAX_FS_OPT     8 // max file selector options
 
-#define FS_BUFFER_SIZE (isMTmodEnabled() ? 0x1000 : STD_BUFFER_SIZE)
+#define FS_BUFFER_SIZE (isMTmodEnabled() ? 0x4000 : STD_BUFFER_SIZE)
 
 // Volume2Partition resolution table
 PARTITION VolToPart[] = {
