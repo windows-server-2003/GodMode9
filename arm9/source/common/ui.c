@@ -1011,25 +1011,20 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     }
     else if (InputCheck(false, false, false)) { // new pressed button detecting
         exit_mode = GM9HandleUserInput(GODMODE_MODE_BG);
-		last_msec = time_cur + last_file_end;
-	}
-	
-	InputCheck(true, false, false);
+        last_msec = time_cur + last_file_end;
+    }
+    
+    InputCheck(true, false, false);
     // exit confirmation
     if (exit_mode != GODMODE_NO_EXIT && ShowPrompt(true, "You have a background file operation\nrunning.\nDo you really want to %s?",
         (exit_mode == GODMODE_EXIT_POWEROFF) ? "shutdown" : "reboot")) (exit_mode == GODMODE_EXIT_POWEROFF) ? PowerOff() : Reboot();
     last_file_msec = time_cur;
     
-    if ((HID_STATE & BUTTON_X) && (HID_STATE & BUTTON_Y)) return false; // press B+Select to cancel
-    
-    return true; // currently don't allow cancelling
+    return !(HID_STATE & BUTTON_X || HID_STATE & BUTTON_Y);
 }
 
 // Multi thread enable/disable
 inline bool ShowProgress(u64 current, u64 total, const char* opstr) {
     if (isMTmodEnabled()) return ShowProgress_mt(current, total, opstr);
-    else {
-        ShowProgress_org(0, 0, opstr); // re-render the frame
-        return ShowProgress_org(current, total, opstr);
-    }
+    else return ShowProgress_org(current, total, opstr);
 }

@@ -1175,19 +1175,19 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == inject) { // -> inject data from clipboard
-		if (isBGOperationRunning()) {
-			ShowPrompt(false, "Another file operation is running!!\nCan't inject.");
-			return 0;
-		}
+        if (isBGOperationRunning()) {
+            ShowPrompt(false, "Another file operation is running!!\nCan't inject.");
+            return 0;
+        }
         char origstr[18 + 1];
         TruncateString(origstr, clipboard->entry[0].name, 18, 10);
         u64 offset = ShowHexPrompt(0, 8, "Inject data from %s?\nSpecifiy offset below.", origstr);
         if (offset != (u64) -1) {
             clipboard->n_entries = 0;
-			setBGOperationRunning(true);
+            setBGOperationRunning(true);
             if (!FileInjectFile(file_path, clipboard->entry[0].path, (u32) offset, 0, 0, NULL))
                 ShowPrompt(false, "Failed injecting %s", origstr);
-			setBGOperationRunning(false);
+            setBGOperationRunning(false);
         }
         return 0;
     }
@@ -1906,7 +1906,7 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == multithread) {
-		if (isBGOperationRunning()) ShowPrompt(false, "You can't switch it\nwhile a file operation is running");
+        if (isBGOperationRunning()) ShowPrompt(false, "You can't switch it\nwhile a file operation is running");
         else setMTmodEnabled(!isMTmodEnabled());
     }
     else return 1;
@@ -2402,7 +2402,7 @@ u8 GM9HandleUserInput (u8 mode) {
                 clipboard->n_entries = 0;
                 
                 if (user_select) {
-					setBGOperationRunning(true);
+                    setBGOperationRunning(true);
                     for (u32 c = 0; c < clipboard_cur->n_entries; c++) {
                         char namestr[36+1];
                         TruncateString(namestr, clipboard_cur->entry[c].name, 36, 12);
@@ -2418,7 +2418,7 @@ u8 GM9HandleUserInput (u8 mode) {
                             } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
                         }
                     }
-					setBGOperationRunning(false);
+                    setBGOperationRunning(false);
                     GetDirContents(current_dir, current_path);
                 }
                 ClearScreenF(true, false, COLOR_STD_BG);
@@ -2533,30 +2533,30 @@ u8 GM9HandleUserInput (u8 mode) {
             GetDirContents(current_dir, current_path);
         }
         
-		// check and draw ui here
+        // check and draw ui here
         if (isBG) {
-			// basic sanity checking
-			if (!current_dir->n_entries) { // current dir is empty -> revert to root
-				ShowPrompt(false, "Invalid directory object");
-				*current_path = '\0';
-				DeinitExtFS(); // deinit and...
-				InitExtFS(); // reinitialize extended file system
-				GetDirContents(current_dir, current_path);
-				cursor = 0;
-				if (!current_dir->n_entries) { // should not happen, if it does fail gracefully
-					ShowPrompt(false, "Invalid root directory.");
-					return GODMODE_EXIT_REBOOT;
-				}
-			}
-			if (cursor >= current_dir->n_entries) // cursor beyond allowed range
-				cursor = current_dir->n_entries - 1;
-			curr_entry = &(current_dir->entry[cursor]);
-			
-			if ((mark_next >= 0) && (curr_entry->type != T_DOTDOT)) {
-				curr_entry->marked = mark_next;
-				mark_next = -2;
-			}
-			DrawDirContents(current_dir, cursor, &scroll);
+            // basic sanity checking
+            if (!current_dir->n_entries) { // current dir is empty -> revert to root
+                ShowPrompt(false, "Invalid directory object");
+                *current_path = '\0';
+                DeinitExtFS(); // deinit and...
+                InitExtFS(); // reinitialize extended file system
+                GetDirContents(current_dir, current_path);
+                cursor = 0;
+                if (!current_dir->n_entries) { // should not happen, if it does fail gracefully
+                    ShowPrompt(false, "Invalid root directory.");
+                    return GODMODE_EXIT_REBOOT;
+                }
+            }
+            if (cursor >= current_dir->n_entries) // cursor beyond allowed range
+                cursor = current_dir->n_entries - 1;
+            curr_entry = &(current_dir->entry[cursor]);
+            
+            if ((mark_next >= 0) && (curr_entry->type != T_DOTDOT)) {
+                curr_entry->marked = mark_next;
+                mark_next = -2;
+            }
+            DrawDirContents(current_dir, cursor, &scroll);
             DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
             DrawTopBar(current_path);
         }
