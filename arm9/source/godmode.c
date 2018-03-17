@@ -434,7 +434,7 @@ u32 FileGraphicsViewer(const char* path) {
         ClearScreenF(true, true, COLOR_STD_BG);
         DrawBitmap(ALT_SCREEN, -1, -1, w, h, bitmap);
         ShowString("Press <A> to continue");
-        InputWait(0);
+        while(!(InputWait(0) & (BUTTON_A | BUTTON_B)));
         ClearScreenF(true, true, COLOR_STD_BG);
     } else ret = 1;
     
@@ -619,7 +619,7 @@ u32 FileHexViewer(const char* path) {
             if (x_off >= 0) DrawStringF(screen, x_off - x0, y, cutoff ? COLOR_HVOFFS : COLOR_HVOFFSI,
                 COLOR_STD_BG, "%08X", (unsigned int) offset + curr_pos);
             if (x_ascii >= 0) {
-                DrawString(screen, ascii, x_ascii - x0, y, COLOR_HVASCII, COLOR_STD_BG);
+                DrawString(screen, ascii, x_ascii - x0, y, COLOR_HVASCII, COLOR_STD_BG, false);
                 for (u32 i = marked0; i < marked1; i++)
                     DrawCharacter(screen, ascii[i % cols], x_ascii - x0 + (FONT_WIDTH_EXT * i), y, COLOR_MARKED, COLOR_STD_BG);
                 if (edit_mode && ((u32) cursor / cols == row)) DrawCharacter(screen, ascii[cursor % cols],
@@ -639,8 +639,7 @@ u32 FileHexViewer(const char* path) {
         
         // handle user input
         u32 pad_state = InputWait(0);
-        if ((pad_state & BUTTON_R1) && (pad_state & BUTTON_L1)) CreateScreenshot();
-        else if (!edit_mode) { // standard viewer mode
+        if (!edit_mode) { // standard viewer mode
             u32 step_ud = (pad_state & BUTTON_R1) ? (0x1000  - (0x1000  % cols)) : cols;
             u32 step_lr = (pad_state & BUTTON_R1) ? (0x10000 - (0x10000 % cols)) : total_shown;
             if (pad_state & BUTTON_DOWN) offset += step_ud;
@@ -2200,14 +2199,12 @@ u32 GodMode(int entrypoint) {
                 }
             }
         } else if (switched && (pad_state & BUTTON_B)) { // unmount SD card
-            DeinitExtFS();
             if (!CheckSDMountState()) {
                 while (!InitSDCardFS() &&
                     ShowPrompt(true, "Initialising SD card failed! Retry?"));
             } else {
                 DeinitSDCardFS();
-                if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) &
-                    (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE)))
+                if (clipboard->n_entries && !PathExist(clipboard->entry[0].path))
                     clipboard->n_entries = 0; // remove SD clipboard entries
             }
             ClearScreenF(true, true, COLOR_STD_BG);
@@ -2246,8 +2243,7 @@ u32 GodMode(int entrypoint) {
             for (u32 c = 1; c < current_dir->n_entries; c++) current_dir->entry[c].marked = 0;
             mark_next = 0;
         } else if (switched && (pad_state & BUTTON_L1)) { // switched L -> screenshot
-            CreateScreenshot();
-            ClearScreenF(true, true, COLOR_STD_BG);
+            // this is handled in hid.h
         } else if (*current_path && (pad_state & BUTTON_L1) && (curr_entry->type != T_DOTDOT)) {
             // unswitched L - mark/unmark single entry
             if (mark_next < -1) mark_next = -1;
