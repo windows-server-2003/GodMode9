@@ -2,15 +2,13 @@
 
 static bool EnableMTmod = true;
 static bool BGOperationRunning = false;
-static bool ScriptRunning = false;
 
 bool isMTmodEnabled() {
-    if (ScriptRunning) return false; // disable MTmod while a script is running
-    else return EnableMTmod;
+    return EnableMTmod;
 }
 
 void setMTmodEnabled(bool enable) {
-    if (!ScriptRunning) EnableMTmod = enable;
+    EnableMTmod = enable;
 }
 
 bool isBGOperationRunning() {
@@ -19,8 +17,4 @@ bool isBGOperationRunning() {
 
 void setBGOperationRunning(bool running) {
     BGOperationRunning = running;
-}
-
-void setScriptRunning(bool running) {
-    ScriptRunning = running;
 }

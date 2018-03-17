@@ -13,7 +13,6 @@
 #include "hid.h"
 #include "ui.h"
 #include "pcx.h"
-#include "multithread.h"
 
 
 #define _MAX_ARGS       4
@@ -1592,7 +1591,6 @@ bool FileTextViewer(const char* path, bool as_script) {
 }
 
 bool ExecuteGM9Script(const char* path_script) {
-    setScriptRunning(true);
     char path_str[32+1];
     TruncateString(path_str, path_script, 32, 12);
     
@@ -1615,7 +1613,6 @@ bool ExecuteGM9Script(const char* path_script) {
         if (var_buffer) free(var_buffer);
         if (script_buffer) free(script_buffer);
         ShowPrompt(false, "Out of memory.");
-        setScriptRunning(false);
         return false;
     }
     
@@ -1624,7 +1621,6 @@ bool ExecuteGM9Script(const char* path_script) {
     if (!script_size || (script_size >= SCRIPT_MAX_SIZE)) {
         free(var_buffer);
         free(script_buffer);
-        setScriptRunning(false);
         return false;
     }
     
@@ -1799,6 +1795,5 @@ bool ExecuteGM9Script(const char* path_script) {
     
     free(var_buffer);
     free(script_buffer);
-    setScriptRunning(false);
     return result;
 }
