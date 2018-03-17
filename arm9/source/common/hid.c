@@ -60,7 +60,7 @@ u32 InputCheck(u32 mode) {
 	}
 	
 	u32 pad_state;
-	if (mode == MODE_ARROW_NEW) {
+	if (mode == MODE_ARROW_NEW || mode == MODE_ARROW_NEW_MCU) {
 		pad_state = ~(pad_state_old & ~(BUTTON_ARROW)) & HID_STATE;
 	} else { // MODE_DETECT_NEW
 		pad_state = ~(pad_state_old) & HID_STATE;
@@ -74,13 +74,16 @@ u32 InputCheck(u32 mode) {
     if (sd_state != sd_state_old) {
         return sd_state ? SD_INSERT : SD_EJECT;
 	}
-    u8 special_key;
-    if (I2C_readRegBuf(I2C_DEV_MCU, 0x10, &special_key, 1)) {
-        if (special_key == 0x01)
-            return pad_state | BUTTON_POWER;
-        else if (special_key == 0x04)
-            return pad_state | BUTTON_HOME;
-    }
+	
+	if (mode == MODE_ARROW_NEW_MCU) {
+		u8 special_key;
+		if (I2C_readRegBuf(I2C_DEV_MCU, 0x10, &special_key, 1)) {
+			if (special_key == 0x01)
+				return pad_state | BUTTON_POWER;
+			else if (special_key == 0x04)
+				return pad_state | BUTTON_HOME;
+		}
+	}
 	return pad_state;
 }
 

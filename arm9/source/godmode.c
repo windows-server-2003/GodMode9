@@ -1873,7 +1873,6 @@ static u32 last_write_perm;
     
 u32 GodMode(int entrypoint) {
     u32 exit_mode = GODMODE_EXIT_REBOOT;
-    pane = panedata;
     last_write_perm = GetWritePermissions();
     
     bool bootloader = IS_SIGHAX && (entrypoint == ENTRY_NANDBOOT);
@@ -2001,6 +2000,7 @@ u32 GodMode(int entrypoint) {
             ShowPrompt(false, "Out of memory."); // just to be safe
             return exit_mode;
         }
+        pane = panedata;
         
         GetDirContents(current_dir, "");
         clipboard->n_entries = 0;
@@ -2008,13 +2008,8 @@ u32 GodMode(int entrypoint) {
         ClearScreenF(true, true, COLOR_STD_BG); // clear splash
     }
     
-    GetDirContents(current_dir, "");
-    clipboard->n_entries = 0;
-    memset(panedata, 0x00, 0x10000);
-    ClearScreenF(true, true, COLOR_STD_BG); // clear splash
-    
     while (1) {
-        exit_mode = GM9HandleUserInput(false);
+        exit_mode = GM9HandleUserInput(GODMODE_MODE_NORMAL);
         if (exit_mode != GODMODE_NO_EXIT) break;
     }
     
@@ -2030,8 +2025,10 @@ u32 GodMode(int entrypoint) {
     return exit_mode;
 }
 
-u8 GM9HandleUserInput (bool BGTask) {
+u8 GM9HandleUserInput (u8 mode) {
     curr_drvtype = DriveType(current_path);
+        
+        bool isBG = (mode != GODMODE_MODE_NORMAL); // whether a file operation is running
         
         // basic sanity checking
         if (!current_dir->n_entries) { // current dir is empty -> revert to root
@@ -2054,7 +2051,7 @@ u8 GM9HandleUserInput (bool BGTask) {
             curr_entry->marked = mark_next;
             mark_next = -2;
         }
-        if (!BGTask) { // for background, draw at the end
+        if (!isBG) { // for background, draw at the end
             DrawDirContents(current_dir, cursor, &scroll);
             DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
             DrawTopBar(current_path);
@@ -2069,14 +2066,14 @@ u8 GM9HandleUserInput (bool BGTask) {
         
         // handle user input
         u32 pad_state;
-        if (BGTask) {
-            pad_state = InputCheck(MODE_ARROW_NEW);
-			if (!pad_state) return GODMODE_NO_EXIT; 
+        if (isBG) {
+            pad_state = InputCheck((mode == GODMODE_MODE_BG_MCU) ? MODE_ARROW_NEW_MCU : MODE_ARROW_NEW);
+            if (!pad_state) return GODMODE_NO_EXIT; 
         }
         else pad_state = InputWait(3);
         
         bool switched;
-        if (BGTask) switched = HID_STATE & (BUTTON_R1);
+        if (isBG) switched = (HID_STATE & BUTTON_R1);
         else switched = (pad_state & BUTTON_R1);
         
         // basic navigation commands
@@ -2198,7 +2195,7 @@ u8 GM9HandleUserInput (bool BGTask) {
                 while (!InitSDCardFS() &&
                     ShowPrompt(true, "Initialising SD card failed! Retry?"));
             } else {
-                if (BGTask && clipboard_cur->n_entries && (DriveType(clipboard->entry[0].path) &
+                if (isBG && clipboard_cur->n_entries && (DriveType(clipboard->entry[0].path) &
                     (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
                     DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
                     if (!ShowPrompt(true, "You have a background file\noperation that read/write to/from SD.\n \nDo you really want to unmount SD?"))
@@ -2319,7 +2316,7 @@ u8 GM9HandleUserInput (bool BGTask) {
                 ShowPrompt(false, "Not allowed in XORpad drive");
             } else if ((curr_drvtype & DRV_CART) && (pad_state & BUTTON_Y)) {
                 ShowPrompt(false, "Not allowed in gamecart drive");
-            } else if (BGTask && (pad_state & BUTTON_Y)) {
+            } else if (isBG && (pad_state & BUTTON_Y)) {
                 ShowPrompt(false, "Another file operation is running in background");
             } else if (pad_state & BUTTON_Y) { // paste files
                 const char* optionstr[2] = { "Copy path(s)", "Move path(s)" };
@@ -2364,7 +2361,7 @@ u8 GM9HandleUserInput (bool BGTask) {
                 ShowPrompt(false, "Not allowed in virtual path");
             } else if ((curr_drvtype & DRV_ALIAS) && (pad_state & (BUTTON_X))) {
                 ShowPrompt(false, "Not allowed in alias path");
-            } else if (BGTask && (pad_state & (BUTTON_X))) {
+            } else if (isBG && (pad_state & (BUTTON_X))) {
                 ShowPrompt(false, "Another file operation is running in background");
             } else if ((pad_state & BUTTON_X) && (curr_entry->type != T_DOTDOT)) { // rename a file
                 char newname[256];
@@ -2406,7 +2403,7 @@ u8 GM9HandleUserInput (bool BGTask) {
         }
         
         if (pad_state & BUTTON_START) {
-            return switched ? GODMODE_EXIT_POWEROFF : GODMODE_EXIT_REBOOT;
+            return (switched || HID_STATE & BUTTON_LEFT) ? GODMODE_EXIT_POWEROFF : GODMODE_EXIT_REBOOT;
         } else if (pad_state & (BUTTON_HOME|BUTTON_POWER)) { // Home menu
             const char* optionstr[8];
             const char* buttonstr = (pad_state & BUTTON_HOME) ? "HOME" : "POWER";
@@ -2439,7 +2436,7 @@ u8 GM9HandleUserInput (bool BGTask) {
                 } else if (user_select == payloads) {
                     if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
                     else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm")) {
-                        if (!BGTask || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to boot this payload?"))
+                        if (!isBG || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to boot this payload?"))
                             BootFirmHandler(loadpath, false, false);
                     }
                 }
@@ -2471,7 +2468,7 @@ u8 GM9HandleUserInput (bool BGTask) {
             GetDirContents(current_dir, current_path);
         }
         
-        if (BGTask) {
+        if (isBG) {
             DrawDirContents(current_dir, cursor, &scroll);
             DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
             DrawTopBar(current_path);

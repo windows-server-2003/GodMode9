@@ -81,10 +81,10 @@ bool FormatSDCard(u64 hidden_mb, u32 cluster_size, const char* label) {
     InitSDCardFS();
     UINT c_size = cluster_size;
     
-    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
     if (!buffer) bkpt; // will not happen
-    bool ret = ((f_mkfs("0:", FM_FAT32, c_size, buffer, FS_BUFFER_SIZE) == FR_OK) || 
-        (f_mkfs("0:", FM_FAT32, 0, buffer, FS_BUFFER_SIZE) == FR_OK)) &&
+    bool ret = ((f_mkfs("0:", FM_FAT32, c_size, buffer, STD_BUFFER_SIZE) == FR_OK) || 
+        (f_mkfs("0:", FM_FAT32, 0, buffer, STD_BUFFER_SIZE) == FR_OK)) &&
         (f_setlabel((label) ? label : "0:GM9SD") == FR_OK);
     free(buffer);
     
@@ -100,9 +100,9 @@ bool SetupBonusDrive(void) {
     ShowString("Formatting drive, please wait...");
     if (GetMountState() & IMG_NAND) InitImgFS(NULL);
     
-    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
     if (!buffer) bkpt;
-    bool ret = (f_mkfs("8:", FM_ANY, 0, buffer, FS_BUFFER_SIZE) == FR_OK);
+    bool ret = (f_mkfs("8:", FM_ANY, 0, buffer, STD_BUFFER_SIZE) == FR_OK);
     free(buffer);
     
     if (ret) {

@@ -34,9 +34,10 @@
 #define TIMEOUT_HID   (1 << 31)
 
 // options for InputCheck()
-#define MODE_UPDATE     0
-#define MODE_DETECT_NEW 1
-#define MODE_ARROW_NEW  2
+#define MODE_UPDATE        0
+#define MODE_DETECT_NEW    1
+#define MODE_ARROW_NEW     2
+#define MODE_ARROW_NEW_MCU 3
 
 
 u32 InputWait(u32 timeout_sec);
