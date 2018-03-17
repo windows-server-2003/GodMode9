@@ -52,21 +52,21 @@ u32 InputWait(u32 timeout_sec) {
 }
 
 // for button checking with background file operation
-u32 InputCheck(u32 mode) {
+u32 InputCheck(bool update_last_state, bool detect_arrow, bool detect_mcu) {
 	static u32 cart_state_old = 0;
 	static u32 sd_state_old = 0;
 	static u32 pad_state_old = 0;
-	if (mode == MODE_UPDATE) {
+	if (update_last_state) {
 		cart_state_old = CART_STATE;
 		sd_state_old = SD_STATE;
 		pad_state_old = HID_STATE;
-		return 0; // should not caught
+		return 0; // update only
 	}
 	
 	u32 pad_state;
-	if (mode == MODE_ARROW_NEW || mode == MODE_ARROW_NEW_MCU) {
+	if (detect_arrow) {
 		pad_state = ~(pad_state_old & ~(BUTTON_ARROW)) & HID_STATE;
-	} else { // MODE_DETECT_NEW
+	} else {
 		pad_state = ~(pad_state_old) & HID_STATE;
 	}
 	
@@ -79,7 +79,7 @@ u32 InputCheck(u32 mode) {
         return sd_state ? SD_INSERT : SD_EJECT;
 	}
 	
-	if (mode == MODE_ARROW_NEW_MCU) {
+	if (detect_mcu) {
 		u8 special_key;
 		if (I2C_readRegBuf(I2C_DEV_MCU, 0x10, &special_key, 1)) {
 			if (special_key == 0x01)

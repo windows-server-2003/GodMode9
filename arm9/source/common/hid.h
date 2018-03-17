@@ -33,13 +33,7 @@
 #define SD_EJECT      (1 << 17)
 #define TIMEOUT_HID   (1 << 31)
 
-// options for InputCheck()
-#define MODE_UPDATE        0
-#define MODE_DETECT_NEW    1
-#define MODE_ARROW_NEW     2
-#define MODE_ARROW_NEW_MCU 3
-
 
 u32 InputWait(u32 timeout_sec);
-u32 InputCheck(u32 mode);
+u32 InputCheck(bool update_last_state, bool detect_arrow, bool detect_mcu);
 bool CheckButton(u32 button);

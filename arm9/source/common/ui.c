@@ -445,7 +445,7 @@ bool ShowPrompt(bool ask, const char *format, ...)
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     
     return ret;
 }
@@ -598,7 +598,7 @@ u32 ShowSelectPrompt(u32 n, const char** options, const char *format, ...) {
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     
     return (sel >= n) ? 0 : sel + 1;
 }
@@ -743,7 +743,7 @@ bool ShowInputPrompt(char* inputstr, u32 max_size, u32 resize, const char* alpha
         (*cc == ' ') && (cc > inputstr); *(cc--) = '\0');
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     
     return ret;
 }
@@ -757,7 +757,7 @@ bool ShowStringPrompt(char* inputstr, u32 max_size, const char *format, ...) {
     ret = ShowInputPrompt(inputstr, max_size, 1, alphabet, format, va);
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -776,7 +776,7 @@ u64 ShowHexPrompt(u64 start_val, u32 n_digits, const char *format, ...) {
     } else ret = (u64) -1;
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -794,7 +794,7 @@ u64 ShowNumberPrompt(u64 start_val, const char *format, ...) {
     } else ret = (u64) -1;
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -822,7 +822,7 @@ bool ShowDataPrompt(u8* data, u32* size, const char *format, ...) {
     }
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -892,7 +892,7 @@ bool ShowRtcSetterPrompt(void* time, const char *format, ...) {
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(MODE_UPDATE);
+    if (isMTmodEnabled()) InputCheck(true, false, false);
     
     return ret;
 }
@@ -1009,12 +1009,12 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
         exit_mode = GM9HandleUserInput(GODMODE_MODE_BG_MCU); // check also power/home
         last_msec = time_cur + last_file_end;
     }
-    else if (InputCheck(MODE_DETECT_NEW)) { // new pressed button detecting
+    else if (InputCheck(false, false, false)) { // new pressed button detecting
         exit_mode = GM9HandleUserInput(GODMODE_MODE_BG);
 		last_msec = time_cur + last_file_end;
 	}
 	
-    InputCheck(MODE_UPDATE);
+	InputCheck(true, false, false);
     // exit confirmation
     if (exit_mode != GODMODE_NO_EXIT && ShowPrompt(true, "You have a background file operation\nrunning.\nDo you really want to %s?",
         (exit_mode == GODMODE_EXIT_POWEROFF) ? "shutdown" : "reboot")) (exit_mode == GODMODE_EXIT_POWEROFF) ? PowerOff() : Reboot();

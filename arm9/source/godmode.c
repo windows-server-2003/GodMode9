@@ -284,7 +284,6 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         "%*s", len_info / FONT_WIDTH_EXT, tempstr);
     
     // bottom: inctruction block (only show if MTmod is disabled)
-    if (!isMTmodEnabled()) {
     char instr[512];
     snprintf(instr, 512, "%s\n%s%s%s%s%s%s%s%s",
         FLAVOR " " VERSION, // generic start part
@@ -298,8 +297,7 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         "R+\x1B\x1A - Switch to prev/next pane\n",
         (clipboard->n_entries) ? "SELECT - Clear Clipboard\n" : "SELECT - Restore Clipboard\n", // only if clipboard is full
         "START - Reboot / [+R] Poweroff\nHOME button for HOME menu"); // generic end part
-    DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr), COLOR_STD_FONT, COLOR_STD_BG, instr);
-    }
+    DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr) - (isBGOperationRunning() ? (5+FONT_HEIGHT_EXT) : 0), COLOR_STD_FONT, COLOR_STD_BG, instr);
 }
 
 void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
@@ -988,7 +986,7 @@ u32 FileAttrMenu(const char* file_path) {
     }
 }
 
-u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pane, bool isBG) {
+u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pane) {
     const char* file_path = (&(current_dir->entry[*cursor]))->path;
     const char* optionstr[16];
     
@@ -1166,7 +1164,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
             }
             return 0;
         }
-        return FileHandlerMenu(current_path, cursor, scroll, pane, isBG);
+        return FileHandlerMenu(current_path, cursor, scroll, pane);
     }
     else if (user_select == fileinfo) { // -> show file info
         FileAttrMenu(file_path);
@@ -1177,7 +1175,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == inject) { // -> inject data from clipboard
-		if (isBG) {
+		if (isBGOperationRunning()) {
 			ShowPrompt(false, "Another file operation is running!!\nCan't inject.");
 			return 0;
 		}
@@ -1186,8 +1184,10 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         u64 offset = ShowHexPrompt(0, 8, "Inject data from %s?\nSpecifiy offset below.", origstr);
         if (offset != (u64) -1) {
             clipboard->n_entries = 0;
+			setBGOperationRunning(true);
             if (!FileInjectFile(file_path, clipboard->entry[0].path, (u32) offset, 0, 0, NULL))
                 ShowPrompt(false, "Failed injecting %s", origstr);
+			setBGOperationRunning(false);
         }
         return 0;
     }
@@ -1759,10 +1759,10 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     
-    return FileHandlerMenu(current_path, cursor, scroll, pane, isBG);
+    return FileHandlerMenu(current_path, cursor, scroll, pane);
 }
 
-u32 HomeMoreMenu(char* current_path, bool isBG) {
+u32 HomeMoreMenu(char* current_path) {
     NandPartitionInfo np_info;
     if (GetNandPartitionInfo(&np_info, NP_TYPE_BONUS, NP_SUBTYPE_CTR, 0, NAND_SYSNAND) != 0) np_info.count = 0;
     
@@ -1791,7 +1791,7 @@ u32 HomeMoreMenu(char* current_path, bool isBG) {
     
     int user_select = ShowSelectPrompt(n_opt, optionstr, promptstr);
     if (user_select == sdformat) { // format SD card
-        if (isBG && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
+        if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
             (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
             DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
                 if (!ShowPrompt(true, "The file operation will be cancelled.\nDo you really want to unmount SD?"))
@@ -1906,12 +1906,12 @@ u32 HomeMoreMenu(char* current_path, bool isBG) {
         return 0;
     }
     else if (user_select == multithread) {
-		if (isBG) ShowPrompt(false, "You can't switch it\nwhile a file operation is running");
+		if (isBGOperationRunning()) ShowPrompt(false, "You can't switch it\nwhile a file operation is running");
         else setMTmodEnabled(!isMTmodEnabled());
     }
     else return 1;
     
-    return HomeMoreMenu(current_path, isBG);
+    return HomeMoreMenu(current_path);
 }
 
 const u32 quick_stp = (MAIN_SCREEN == TOP_SCREEN) ? 20 : 19;
@@ -2135,7 +2135,7 @@ u8 GM9HandleUserInput (u8 mode) {
         // handle user input
         u32 pad_state;
         if (isBG) {
-            pad_state = InputCheck((mode == GODMODE_MODE_BG_MCU) ? MODE_ARROW_NEW_MCU : MODE_ARROW_NEW);
+            pad_state = InputCheck(false, true, (mode == GODMODE_MODE_BG_MCU));
             if (!pad_state) return GODMODE_NO_EXIT; 
         }
         else pad_state = InputWait(3);
@@ -2236,7 +2236,7 @@ u8 GM9HandleUserInput (u8 mode) {
                 }
             }
         } else if ((pad_state & BUTTON_A) && (curr_entry->type == T_FILE)) { // process a file
-            FileHandlerMenu(current_path, &cursor, &scroll, &pane, isBG); // processed externally
+            FileHandlerMenu(current_path, &cursor, &scroll, &pane); // processed externally
         } else if (*current_path && ((pad_state & BUTTON_B) || // one level down
             ((pad_state & BUTTON_A) && (curr_entry->type == T_DOTDOT)))) {
             if (switched) { // use R+B to return to root fast
@@ -2402,6 +2402,7 @@ u8 GM9HandleUserInput (u8 mode) {
                 clipboard->n_entries = 0;
                 
                 if (user_select) {
+					setBGOperationRunning(true);
                     for (u32 c = 0; c < clipboard_cur->n_entries; c++) {
                         char namestr[36+1];
                         TruncateString(namestr, clipboard_cur->entry[c].name, 36, 12);
@@ -2417,6 +2418,7 @@ u8 GM9HandleUserInput (u8 mode) {
                             } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
                         }
                     }
+					setBGOperationRunning(false);
                     GetDirContents(current_dir, current_path);
                 }
                 ClearScreenF(true, false, COLOR_STD_BG);
@@ -2486,7 +2488,7 @@ u8 GM9HandleUserInput (u8 mode) {
             while ((user_select = ShowSelectPrompt(n_opt, optionstr, "%s button pressed.\nSelect action:", buttonstr)) &&
                 (user_select != poweroff) && (user_select != reboot)) {
                 char loadpath[256];
-                if ((user_select == more) && (HomeMoreMenu(current_path, isBG) == 0)) break; // more... menu
+                if ((user_select == more) && (HomeMoreMenu(current_path) == 0)) break; // more... menu
                 else if (user_select == scripts) {
                     if (!CheckSupportDir(SCRIPTS_DIR)) {
                         ShowPrompt(false, "Scripts directory not found.\n(default path: 0:/gm9/" SCRIPTS_DIR ")");
@@ -2531,6 +2533,7 @@ u8 GM9HandleUserInput (u8 mode) {
             GetDirContents(current_dir, current_path);
         }
         
+		// check and draw ui here
         if (isBG) {
 			// basic sanity checking
 			if (!current_dir->n_entries) { // current dir is empty -> revert to root

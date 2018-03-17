@@ -1,11 +1,26 @@
 #include "multithread.h"
 
 static bool EnableMTmod = true;
+static bool BGOperationRunning = false;
+static bool ScriptRunning = false;
 
 bool isMTmodEnabled() {
-	return EnableMTmod;
+	if (ScriptRunning) return false; // disable MTmod while a script is running
+	else return EnableMTmod;
 }
 
 void setMTmodEnabled(bool enable) {
-	EnableMTmod = enable;
+	if (!ScriptRunning) EnableMTmod = enable;
+}
+
+bool isBGOperationRunning() {
+	return BGOperationRunning;
+}
+
+void setBGOperationRunning(bool running) {
+	BGOperationRunning = running;
+}
+
+void setScriptRunning(bool running) {
+	ScriptRunning = running;
 }

@@ -444,7 +444,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, 
     bool ret = false;
     
     // reset last hid state(for multithread)
-    InputCheck(true);
+    InputCheck(true, false, false);
     
     // check destination write permission (special paths only)
     if (((*dest == '1') || (strncmp(dest, "0:/Nintendo 3DS", 16) == 0)) &&
