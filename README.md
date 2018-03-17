@@ -1,9 +1,9 @@
 # GodMode9 - MultiThreadMod
 A multi-thread variant of [GodMode9](https://github.com/d0k3/GodMode9) 
 
-You can browse files/dirs while copying file!!!
-
-It may have a lot of bugs and __may lose your data__ though.
+You can browse files/dirs while copying file!
+It's still WIP so not stable, use at your own risk!!
+Copying is 1/2~1/3 as fast as origin.
 
 ## Warning
 __This is powerful stuff__, it provides you with the means to do basically any thinkable modification to any system data available on the 3DS console. However, precautions are taken so you don't accidentally damage the data of your console. The write permissions system protects you by providing warnings and forces you to enter an unlock sequence for enabling write permissions. It is not possible to overwrite or modify any important stuff without such unlock sequences and it is not possible to accidentally unlock something.
