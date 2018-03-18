@@ -53,42 +53,42 @@ u32 InputWait(u32 timeout_sec) {
 
 // for button checking with background file operation
 u32 InputCheck(bool update_last_state, bool detect_arrow, bool detect_mcu) {
-	static u32 cart_state_old = 0;
-	static u32 sd_state_old = 0;
-	static u32 pad_state_old = 0;
-	if (update_last_state) {
-		cart_state_old = CART_STATE;
-		sd_state_old = SD_STATE;
-		pad_state_old = HID_STATE;
-		return 0; // update only
-	}
-	
-	u32 pad_state;
-	if (detect_arrow) {
-		pad_state = ~(pad_state_old & ~(BUTTON_ARROW)) & HID_STATE;
-	} else {
-		pad_state = ~(pad_state_old) & HID_STATE;
-	}
-	
-	u32 cart_state = CART_STATE;
+    static u32 cart_state_old = 0;
+    static u32 sd_state_old = 0;
+    static u32 pad_state_old = 0;
+    if (update_last_state) {
+        cart_state_old = CART_STATE;
+        sd_state_old = SD_STATE;
+        pad_state_old = HID_STATE;
+        return 0; // update only
+    }
+    
+    u32 pad_state;
+    if (detect_arrow) {
+        pad_state = ~(pad_state_old & ~(BUTTON_ARROW)) & HID_STATE;
+    } else {
+        pad_state = ~(pad_state_old) & HID_STATE;
+    }
+    
+    u32 cart_state = CART_STATE;
     if (cart_state != cart_state_old) {
         return cart_state ? CART_INSERT : CART_EJECT;
-	}
+    }
     u32 sd_state = SD_STATE;
     if (sd_state != sd_state_old) {
         return sd_state ? SD_INSERT : SD_EJECT;
-	}
-	
-	if (detect_mcu) {
-		u8 special_key;
-		if (I2C_readRegBuf(I2C_DEV_MCU, 0x10, &special_key, 1)) {
-			if (special_key == 0x01)
-				return pad_state | BUTTON_POWER;
-			else if (special_key == 0x04)
-				return pad_state | BUTTON_HOME;
-		}
-	}
-	return pad_state;
+    }
+    
+    if (detect_mcu) {
+        u8 special_key;
+        if (I2C_readRegBuf(I2C_DEV_MCU, 0x10, &special_key, 1)) {
+            if (special_key == 0x01)
+                return pad_state | BUTTON_POWER;
+            else if (special_key == 0x04)
+                return pad_state | BUTTON_HOME;
+        }
+    }
+    return pad_state;
 }
 
 bool CheckButton(u32 button) {
