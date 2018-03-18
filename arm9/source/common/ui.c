@@ -1027,7 +1027,7 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     last_file_msec = time_cur;
     
     if (current == 1 && total == 1) setBGOperationRunning(false);
-    return !(HID_STATE & BUTTON_X || HID_STATE & BUTTON_Y);
+    return !(HID_STATE & BUTTON_R1 || HID_STATE & BUTTON_SELECT);
 }
 
 // Multi thread enable/disable

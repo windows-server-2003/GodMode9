@@ -2311,7 +2311,7 @@ u8 GM9HandleUserInput (u8 mode) {
             // unswitched L - mark/unmark single entry
             if (mark_next < -1) mark_next = -1;
             else curr_entry->marked ^= 0x1;
-        } else if (pad_state & BUTTON_SELECT) { // clear/restore clipboard
+        } else if (!switched && pad_state & BUTTON_SELECT) { // clear/restore clipboard
             clipboard->n_entries = (clipboard->n_entries > 0) ? 0 : last_clipboard_size;
         }
 
