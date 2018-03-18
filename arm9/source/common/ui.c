@@ -950,6 +950,7 @@ bool ShowProgress_org(u64 current, u64 total, const char* opstr)
 
 bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
 {
+    if (current == 0 && total == 0) setBGOperationRunning(true);
     static u32 last_prog_width = 0;
     static u64 timer = 0;
     static u64 last_msec = 0;
@@ -979,14 +980,15 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     last_sec_remain = sec_remain;
     
     if (!current || last_prog_width > prog_width)
-        DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, bar_width, bar_height, COLOR_STD_BG);
+        DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, bar_width, bar_height, COLOR_STD_BG); // clear the bar
 
-    if (prog_width && *BOT_SCREEN != 0xFF) // draw the bar fully
+	bool screen_cleared = (*BOT_SCREEN != 0xFF); // the left/bottom pixel is not white -> screen has been cleared
+	if (prog_width && screen_cleared) // draw the bar fully
         DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, prog_width, bar_height, COLOR_STD_FONT);
     else if (prog_width > last_prog_width) // draw only the bar added from previous drawing
         DrawRectangle(MAIN_SCREEN, last_prog_width, bar_pos_y, prog_width - last_prog_width, bar_height, COLOR_STD_FONT);
     
-    if (prog_width > last_prog_width) { // update them only if the width is changed
+    if (prog_width > last_prog_width || screen_cleared) { // update them only if the width is changed
         TruncateString(progstr, opstr, (bar_width / FONT_WIDTH_EXT) - 7, 8);
         snprintf(tempstr, 64, "%s (%lu%%)", progstr, prog_percent);
         ResizeString(progstr, tempstr, bar_width / FONT_WIDTH_EXT, 8, false);
@@ -999,8 +1001,12 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
         }
     }
     last_prog_width = prog_width;
-    
-    CheckBrightness();
+	
+	// operation string
+	if (screen_cleared) {
+		char* operation_str = getCurrentOperationStr();
+		if (operation_str) DrawString(MAIN_SCREEN, operation_str, bar_pos_x, text_pos_y - FONT_HEIGHT_EXT, COLOR_STD_FONT, COLOR_STD_BG, false);
+	}
     
     // Multi threading(handle user input in background)
     u64 time_cur = timer_msec(timer);
@@ -1020,6 +1026,7 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
         (exit_mode == GODMODE_EXIT_POWEROFF) ? "shutdown" : "reboot")) (exit_mode == GODMODE_EXIT_POWEROFF) ? PowerOff() : Reboot();
     last_file_msec = time_cur;
     
+    if (current == 1 && total == 1) setBGOperationRunning(false);
     return !(HID_STATE & BUTTON_X || HID_STATE & BUTTON_Y);
 }
 

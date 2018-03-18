@@ -297,7 +297,7 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         "R+\x1B\x1A - Switch to prev/next pane\n",
         (clipboard->n_entries) ? "SELECT - Clear Clipboard\n" : "SELECT - Restore Clipboard\n", // only if clipboard is full
         "START - Reboot / [+R] Poweroff\nHOME button for HOME menu"); // generic end part
-    DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr) - (isBGOperationRunning() ? (5+FONT_HEIGHT_EXT) : 0), COLOR_STD_FONT, COLOR_STD_BG, instr);
+    DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr) - (isBGOperationRunning() ? (5+2*FONT_HEIGHT_EXT) : 0), COLOR_STD_FONT, COLOR_STD_BG, instr);
 }
 
 void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
@@ -1025,7 +1025,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     bool xorpadable = (FTYPE_XORPAD(filetype));
     bool keyinitable = (FTYPE_KEYINIT(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
     bool keyinstallable = (FTYPE_KEYINSTALL(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
-    bool scriptable = (FTYPE_SCRIPT(filetype));
+    bool scriptable = (FTYPE_SCRIPT(filetype) && !isScriptRunning() && !isBGOperationRunning());
     bool fontable = (FTYPE_FONT(filetype));
     bool viewable = (FTYPE_GFX(filetype));
     bool bootable = (FTYPE_BOOTABLE(filetype));
@@ -1184,10 +1184,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         u64 offset = ShowHexPrompt(0, 8, "Inject data from %s?\nSpecifiy offset below.", origstr);
         if (offset != (u64) -1) {
             clipboard->n_entries = 0;
-            setBGOperationRunning(true);
             if (!FileInjectFile(file_path, clipboard->entry[0].path, (u32) offset, 0, 0, NULL))
                 ShowPrompt(false, "Failed injecting %s", origstr);
-            setBGOperationRunning(false);
         }
         return 0;
     }
@@ -2402,7 +2400,6 @@ u8 GM9HandleUserInput (u8 mode) {
                 clipboard->n_entries = 0;
                 
                 if (user_select) {
-                    setBGOperationRunning(true);
                     for (u32 c = 0; c < clipboard_cur->n_entries; c++) {
                         char namestr[36+1];
                         TruncateString(namestr, clipboard_cur->entry[c].name, 36, 12);
@@ -2418,7 +2415,6 @@ u8 GM9HandleUserInput (u8 mode) {
                             } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
                         }
                     }
-                    setBGOperationRunning(false);
                     GetDirContents(current_dir, current_path);
                 }
                 ClearScreenF(true, false, COLOR_STD_BG);
@@ -2475,7 +2471,7 @@ u8 GM9HandleUserInput (u8 mode) {
             u32 n_opt = 0;
             int poweroff = ++n_opt;
             int reboot = ++n_opt;
-            int scripts = ++n_opt;
+            int scripts = isScriptRunning() ? 0 : ++n_opt;
             int payloads = ++n_opt;
             int more = ++n_opt;
             if (poweroff > 0) optionstr[poweroff - 1] = "Poweroff system";
@@ -2499,6 +2495,7 @@ u8 GM9HandleUserInput (u8 mode) {
                         break;
                     }
                 } else if (user_select == payloads) {
+					if ((isScriptRunning() || isBGOperationRunning()) && !ShowPrompt(true, "You have background process!!\nLoading payloads will terminate it\nDo you want to continue?")) continue;
                     if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
                     else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm")) {
                         if (!isBG || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to boot this payload?"))

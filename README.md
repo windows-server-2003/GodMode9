@@ -1,7 +1,8 @@
 # GodMode9 - MultiThreadMod
 A multi-thread variant of [GodMode9](https://github.com/d0k3/GodMode9) 
 
-You can browse files/dirs while copying file!
+You can browse files/dirs while copying/scripting file!
+You can't copy files while running scripts or copying other files though.
 It's still WIP so not stable, use at your own risk!!
 Copying is 1/2~1/3 as fast as origin.
 

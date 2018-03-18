@@ -159,6 +159,7 @@ size_t FileGetSize(const char* path) {
 }
 
 bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
+    setCurrentOperationId(OPERATION_SHA);
     bool ret = true;
     FIL file;
     u64 fsize;
@@ -197,6 +198,7 @@ bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
 }
 
 u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
+    setCurrentOperationId(OPERATION_FIND);
     FIL file; // used for FAT & virtual
     u64 found = (u64) -1;
     u64 fsize = FileGetSize(path);
@@ -241,6 +243,7 @@ u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
 }
 
 bool FileInjectFile(const char* dest, const char* orig, u64 off_dest, u64 off_orig, u64 size, u32* flags) {
+    setCurrentOperationId(OPERATION_INJECT);
     FIL ofile;
     FIL dfile;
     bool allow_expand = (flags && (*flags & ALLOW_EXPAND));
@@ -308,6 +311,7 @@ bool FileInjectFile(const char* dest, const char* orig, u64 off_dest, u64 off_or
 }
 
 bool FileSetByte(const char* dest, u64 offset, u64 size, u8 fillbyte, u32* flags) {
+    setCurrentOperationId(OPERATION_FILL);
     FIL dfile;
     bool allow_expand = (flags && (*flags & ALLOW_EXPAND));
     
@@ -439,6 +443,7 @@ bool PathExist(const char* path) {
 }
 
 bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, u32 bufsiz) {
+    if (!move) setCurrentOperationId(OPERATION_COPY);
     bool to_virtual = GetVirtualSource(dest);
     bool silent = (flags && (*flags & SILENT));
     bool ret = false;
@@ -662,9 +667,11 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         }
         
         // actual move / copy operation
+        setBGOperationRunning(true);
         bool same_drv = (strncasecmp(lorig, ldest, 2) == 0);
         bool res = PathMoveCopyRec(ldest, lorig, flags, move && same_drv, buffer, FS_BUFFER_SIZE);
         if (move && res && (!flags || !(*flags&SKIP_CUR))) PathDelete(lorig);
+        setBGOperationRunning(false);
         
         free(buffer);
         return res;
@@ -701,9 +708,11 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         }
         
         // actual virtual copy operation
+        setBGOperationRunning(true);
         if (force_unmount) DismountDriveType(DriveType(ldest)&(DRV_SYSNAND|DRV_EMUNAND|DRV_IMAGE));
         bool res = PathMoveCopyRec(ldest, lorig, flags, false, buffer, FS_BUFFER_SIZE);
         if (force_unmount) InitExtFS();
+        setBGOperationRunning(false);
         
         free(buffer);
         return res;

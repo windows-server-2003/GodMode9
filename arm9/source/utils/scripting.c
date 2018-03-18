@@ -13,6 +13,7 @@
 #include "hid.h"
 #include "ui.h"
 #include "pcx.h"
+#include "multithread.h"
 
 
 #define _MAX_ARGS       4
@@ -927,19 +928,21 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         ShowPrompt(false, argv[0]);
     }
     else if (id == CMD_ID_QR) {
-        const u32 screen_size = SCREEN_SIZE(ALT_SCREEN);
-        u8* screen_copy = (u8*) malloc(screen_size);
-        u8 qrcode[qrcodegen_BUFFER_LEN_MAX];
-        u8 temp[qrcodegen_BUFFER_LEN_MAX];
-        ret = screen_copy && qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
-            qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
-        if (ret) {
-            memcpy(screen_copy, ALT_SCREEN, screen_size);
-            DrawQrCode(ALT_SCREEN, qrcode);
-            ShowPrompt(false, argv[0]);
-            memcpy(ALT_SCREEN, screen_copy, screen_size);
-        } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
-        free(screen_copy);
+        if (!isMTmodEnabled()) { // ignore if MTmod is enabled
+            const u32 screen_size = SCREEN_SIZE(ALT_SCREEN);
+            u8* screen_copy = (u8*) malloc(screen_size);
+            u8 qrcode[qrcodegen_BUFFER_LEN_MAX];
+            u8 temp[qrcodegen_BUFFER_LEN_MAX];
+            ret = screen_copy && qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
+                qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
+            if (ret) {
+                memcpy(screen_copy, ALT_SCREEN, screen_size);
+                DrawQrCode(ALT_SCREEN, qrcode);
+                ShowPrompt(false, argv[0]);
+                memcpy(ALT_SCREEN, screen_copy, screen_size);
+            } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
+            free(screen_copy);
+        }
     }
     else if (id == CMD_ID_ASK) {
         ret = ShowPrompt(true, argv[0]);
@@ -1257,18 +1260,24 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         InitExtFS();
     }
     else if (id == CMD_ID_REBOOT) {
-        DeinitExtFS();
-        DeinitSDCardFS();
-        Reboot();
+        if (!isBGOperationRunning() || ShowPrompt(true, "The script is rebooting the console,\nbut there is a background file operation.\n \nDo you want to reboot?")) {
+            DeinitExtFS();
+            DeinitSDCardFS();
+            Reboot();
+        }
     }
     else if (id == CMD_ID_POWEROFF) {
-        DeinitExtFS();
-        DeinitSDCardFS();
-        PowerOff();
+        if (!isBGOperationRunning() || ShowPrompt(true, "The script is shutting down the console,\nbut there is a background file operation.\n \nDo you want to shutdown?")) {
+            DeinitExtFS();
+            DeinitSDCardFS();
+            PowerOff();
+        }
     }
     else if (id == CMD_ID_BKPT) {
-        bkpt;
-        while(1);
+        if (!isBGOperationRunning() || ShowPrompt(true, "The script is trying to make an exception,\nbut there is a background file operation.\n \nDo you want to do that?")) {
+            bkpt;
+            while(1);
+        }
     }
     else { // command not recognized / bad number of arguments
         ret = false;
@@ -1591,9 +1600,9 @@ bool FileTextViewer(const char* path, bool as_script) {
 }
 
 bool ExecuteGM9Script(const char* path_script) {
+	setScriptRunning(true);
     char path_str[32+1];
     TruncateString(path_str, path_script, 32, 12);
-    
     
     // reset control flow global vars
     ifcnt = 0;
@@ -1613,6 +1622,7 @@ bool ExecuteGM9Script(const char* path_script) {
         if (var_buffer) free(var_buffer);
         if (script_buffer) free(script_buffer);
         ShowPrompt(false, "Out of memory.");
+		setScriptRunning(false);
         return false;
     }
     
@@ -1621,6 +1631,7 @@ bool ExecuteGM9Script(const char* path_script) {
     if (!script_size || (script_size >= SCRIPT_MAX_SIZE)) {
         free(var_buffer);
         free(script_buffer);
+		setScriptRunning(false);
         return false;
     }
     
@@ -1633,7 +1644,7 @@ bool ExecuteGM9Script(const char* path_script) {
     // setup script preview (only if used)
     u32 preview_mode_local = 0;
     if (MAIN_SCREEN != TOP_SCREEN) {
-        ClearScreen(TOP_SCREEN, COLOR_STD_BG);
+        if (!isMTmodEnabled()) ClearScreen(TOP_SCREEN, COLOR_STD_BG);
         preview_mode = 2; // 0 -> off 1 -> quick 2 -> full
         script_color_active = COLOR_TVRUN;
         script_color_comment = COLOR_TVCMT;
@@ -1651,7 +1662,7 @@ bool ExecuteGM9Script(const char* path_script) {
         if (!line_end) line_end = ptr + strlen(ptr);
         
         // update script viewer
-        if (MAIN_SCREEN != TOP_SCREEN) {
+        if (MAIN_SCREEN != TOP_SCREEN && !isMTmodEnabled()) {
             if (preview_mode != preview_mode_local) {
                 if (!preview_mode || (preview_mode > 2) || !preview_mode_local)
                     ClearScreen(TOP_SCREEN, COLOR_STD_BG);
@@ -1795,5 +1806,6 @@ bool ExecuteGM9Script(const char* path_script) {
     
     free(var_buffer);
     free(script_buffer);
+	setScriptRunning(false);
     return result;
 }
