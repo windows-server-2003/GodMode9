@@ -1175,8 +1175,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == inject) { // -> inject data from clipboard
-        if (isBGOperationRunning()) {
-            ShowPrompt(false, "Another file operation is running!!\nCan't inject.");
+        if (isBGOperationRunning() || isScriptRunning()) {
+            ShowPrompt(false, "A background process is running!!\nCan't inject.");
             return 0;
         }
         char origstr[18 + 1];
@@ -1789,10 +1789,10 @@ u32 HomeMoreMenu(char* current_path) {
     
     int user_select = ShowSelectPrompt(n_opt, optionstr, promptstr);
     if (user_select == sdformat) { // format SD card
-        if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
+        if ((isBGOperationRunning()) && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
             (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
             DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
-                if (!ShowPrompt(true, "The file operation will be cancelled.\nDo you really want to unmount SD?"))
+                if (!ShowPrompt(true, "The SD will be unmounted and\nthe background process may fail.\nDo you want to continue"))
                     return GODMODE_NO_EXIT;
         }
         bool sd_state = CheckSDMountState();
@@ -1904,7 +1904,7 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == multithread) {
-        if (isBGOperationRunning()) ShowPrompt(false, "You can't switch it\nwhile a file operation is running");
+        if (isBGOperationRunning() || isScriptRunning()) ShowPrompt(false, "You can't switch it while\na background process is running.");
         else setMTmodEnabled(!isMTmodEnabled());
     }
     else return 1;
@@ -2263,7 +2263,7 @@ u8 GM9HandleUserInput (u8 mode) {
                 if (isBG && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
                     (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
                     DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
-                    if (!ShowPrompt(true, "The file operation will be cancelled.\nDo you really want to unmount SD?"))
+                    if (!ShowPrompt(true, "The file operation will be fail.\nDo you really want to unmount SD?"))
                         return GODMODE_NO_EXIT;
                 }
                 DeinitSDCardFS();
@@ -2379,8 +2379,8 @@ u8 GM9HandleUserInput (u8 mode) {
                 ShowPrompt(false, "Not allowed in XORpad drive");
             } else if ((curr_drvtype & DRV_CART) && (pad_state & BUTTON_Y)) {
                 ShowPrompt(false, "Not allowed in gamecart drive");
-            } else if (isBG && (pad_state & BUTTON_Y)) {
-                ShowPrompt(false, "Another file operation is running in background\nCan't continue.");
+            } else if ((isBG || isScriptRunning()) && (pad_state & BUTTON_Y)) {
+                ShowPrompt(false, "A background process is running.\nCan't continue.");
             } else if (pad_state & BUTTON_Y) { // paste files
                 const char* optionstr[2] = { "Copy path(s)", "Move path(s)" };
                 char promptstr[64];
@@ -2471,7 +2471,7 @@ u8 GM9HandleUserInput (u8 mode) {
             u32 n_opt = 0;
             int poweroff = ++n_opt;
             int reboot = ++n_opt;
-            int scripts = isScriptRunning() ? 0 : ++n_opt;
+            int scripts = (isScriptRunning() || isBGOperationRunning()) ? 0 : ++n_opt;
             int payloads = ++n_opt;
             int more = ++n_opt;
             if (poweroff > 0) optionstr[poweroff - 1] = "Poweroff system";
@@ -2495,11 +2495,10 @@ u8 GM9HandleUserInput (u8 mode) {
                         break;
                     }
                 } else if (user_select == payloads) {
-                    if ((isScriptRunning() || isBGOperationRunning()) && !ShowPrompt(true, "You have a background process!!\nLoading a payload will terminate it.\nDo you want to continue?")) continue;
+                    if ((isScriptRunning() || isBGOperationRunning()) && !ShowPrompt(true, "A background process is running!!\nLoading a payload will terminate it.\nDo you want to continue?")) continue;
                     if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
                     else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm")) {
-                        if (!isBG || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to boot this payload?"))
-                            BootFirmHandler(loadpath, false, false);
+                        BootFirmHandler(loadpath, false, false);
                     }
                 }
             }
@@ -2558,6 +2557,12 @@ u8 GM9HandleUserInput (u8 mode) {
             DrawTopBar(current_path);
         }
     return GODMODE_NO_EXIT;
+}
+
+void GodMode_redraw() {
+    DrawDirContents(current_dir, cursor, &scroll);
+    DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
+    DrawTopBar(current_path);
 }
 
 #else

@@ -12,4 +12,5 @@
 
 u32 GodMode(int entrypoint);
 u8 GM9HandleUserInput(u8 mode);
+void GodMode_redraw();
 u32 ScriptRunner(int entrypoint);

@@ -1,10 +1,24 @@
 # GodMode9 - MultiThreadMod
-A multi-thread variant of [GodMode9](https://github.com/d0k3/GodMode9) 
+A multi-thread support variant of [GodMode9](https://github.com/d0k3/GodMode9) 
 
-You can browse files/dirs while copying/scripting file!
-You can't copy files while running scripts or copying other files though.
-It's still WIP so not stable, use at your own risk!!
-Copying is 1/2~1/3 as fast as origin.
+## What you can do with this
+Browse dirs while copying/injecting/etc.!
+Browse while a script is running!
+Disable/Enable these feauture(you can't switch it while a background task is running though)
+
+## What you can't do
+Process multiple file operations.
+Run multiple scripts.
+Run a script while a file operation is running
+
+## File operation speed
+At the initial release, operation speed was f..king slow and useless, but it's improved now.
+Here is the proof :
+Seq. 85.1MB SD(0:) -> RAMDRIVE(9:)
+origin(1.6.0) : 15.38s
+MTmod v1.1    : 15.75s
+MTmod v1.0    : 24.39s
+MTmod v0.0    : 137s <- wtf
 
 ## Warning
 __This is powerful stuff__, it provides you with the means to do basically any thinkable modification to any system data available on the 3DS console. However, precautions are taken so you don't accidentally damage the data of your console. The write permissions system protects you by providing warnings and forces you to enter an unlock sequence for enabling write permissions. It is not possible to overwrite or modify any important stuff without such unlock sequences and it is not possible to accidentally unlock something.
@@ -29,7 +43,7 @@ You may use this under the terms of the GNU General Public License GPL v2 or und
 
 ## Credits
 This mod could not be made without original [GodMode9](https://gitub.com/d0k3/GodMode9). Thanks for all contribution to it.
-* **d0k3**, for originally developing GodMode9
+* **d0k3**, for developing original GodMode9
 * **Archshift**, for providing the base project infrastructure
 * **Normmatt**, for sdmmc.c / sdmmc.h and gamecart code, and for being of great help on countless other occasions
 * **Cha(N)**, **Kane49**, and all other FatFS contributors for [FatFS](http://elm-chan.org/fsw/ff/00index_e.html)

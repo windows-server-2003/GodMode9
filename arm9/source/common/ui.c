@@ -950,7 +950,10 @@ bool ShowProgress_org(u64 current, u64 total, const char* opstr)
 
 bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
 {
-    if (current == 0 && total == 0) setBGOperationRunning(true);
+    if (current == 0 && total == 0) {
+        setBGOperationRunning(true);
+        GodMode_redraw(); // screen may has been cleared, so redraw
+    }
     static u32 last_prog_width = 0;
     static u64 timer = 0;
     static u64 last_msec = 0;
