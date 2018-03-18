@@ -2495,7 +2495,7 @@ u8 GM9HandleUserInput (u8 mode) {
                         break;
                     }
                 } else if (user_select == payloads) {
-					if ((isScriptRunning() || isBGOperationRunning()) && !ShowPrompt(true, "You have background process!!\nLoading payloads will terminate it\nDo you want to continue?")) continue;
+					if ((isScriptRunning() || isBGOperationRunning()) && !ShowPrompt(true, "You have a background process!!\nLoading a payload will terminate it.\nDo you want to continue?")) continue;
                     if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
                     else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm")) {
                         if (!isBG || ShowPrompt(true, "Background file operation is running.\n \nDo you really want to boot this payload?"))
