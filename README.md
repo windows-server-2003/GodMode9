@@ -44,6 +44,7 @@ You may use this under the terms of the GNU General Public License GPL v2 or und
 ## Credits
 This mod could not be made without original [GodMode9](https://gitub.com/d0k3/GodMode9). Thanks for all contribution to it.
 * **d0k3**, for developing original GodMode9
+* **vonanzard**, for providing nice ideas of the splash
 * **Archshift**, for providing the base project infrastructure
 * **Normmatt**, for sdmmc.c / sdmmc.h and gamecart code, and for being of great help on countless other occasions
 * **Cha(N)**, **Kane49**, and all other FatFS contributors for [FatFS](http://elm-chan.org/fsw/ff/00index_e.html)
