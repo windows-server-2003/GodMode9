@@ -19,7 +19,6 @@
 #define HIDE_EXT        (1UL<<2)
 #define SELECT_DIRS     (1UL<<3)
 
-
 /** Return total size of SD card **/
 uint64_t GetSDCardSize();
 

@@ -653,7 +653,9 @@ u32 FileHexViewer(const char* path) {
             else if ((pad_state & BUTTON_A) && total_data) edit_mode = true;
             else if (pad_state & (BUTTON_B|BUTTON_START)) break;
             else if (found_size && (pad_state & BUTTON_R1) && (pad_state & BUTTON_X)) {
+                if (isMTmodEnabled()) ClearScreenF(true, true, COLOR_STD_BG);
                 found_offset = FileFindData(path, found_data, found_size, found_offset + 1);
+                if (isMTmodEnabled()) ClearScreenF(true, true, COLOR_STD_BG);
                 if (found_offset == (u32) -1) {
                     ShowPrompt(false, "Not found!");
                     found_size = 0;
@@ -673,7 +675,9 @@ u32 FileHexViewer(const char* path) {
                     if (!found_size) *found_data = 0;
                     if (ShowStringPrompt((char*) found_data, 64 + 1, "Enter search string below.\n(R+X to repeat search)", (unsigned int) offset)) {
                         found_size = strnlen((char*) found_data, 64);
+                        if (isMTmodEnabled()) ClearScreenF(true, true, COLOR_STD_BG);
                         found_offset = FileFindData(path, found_data, found_size, offset);
+                        if (isMTmodEnabled()) ClearScreenF(true, true, COLOR_STD_BG);
                         if (found_offset == (u32) -1) {
                             ShowPrompt(false, "Not found!");
                             found_size = 0;
@@ -683,7 +687,9 @@ u32 FileHexViewer(const char* path) {
                     u32 size = found_size;
                     if (ShowDataPrompt(found_data, &size, "Enter search data below.\n(R+X to repeat search)", (unsigned int) offset)) {
                         found_size = size;
+                        if (isMTmodEnabled()) ClearScreenF(true, true, COLOR_STD_BG);
                         found_offset = FileFindData(path, found_data, size, offset);
+                        if (isMTmodEnabled()) ClearScreenF(true, true, COLOR_STD_BG);
                         if (found_offset == (u32) -1) {
                             ShowPrompt(false, "Not found!");
                             found_size = 0;
@@ -1812,7 +1818,7 @@ u32 HomeMoreMenu(char* current_path) {
     }
     else if (user_select == bonus) { // setup bonus drive
         if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_BONUS ||
-		DriveType(current_path_cur) & DRV_BONUS)) {
+        DriveType(current_path_cur) & DRV_BONUS)) {
                 if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
                     return GODMODE_NO_EXIT;
         }
@@ -1825,7 +1831,7 @@ u32 HomeMoreMenu(char* current_path) {
     }
     else if (user_select == multi) { // switch EmuNAND offset
         if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_EMUNAND
-		|| DriveType(current_path_cur) & DRV_EMUNAND)) {
+        || DriveType(current_path_cur) & DRV_EMUNAND)) {
                 if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
                     return GODMODE_NO_EXIT;
         }

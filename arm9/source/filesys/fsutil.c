@@ -159,7 +159,7 @@ size_t FileGetSize(const char* path) {
 }
 
 bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
-    setCurrentOperationId(OPERATION_SHA);
+    setCurrentOperationId(OPERATION_VERIFY);
     bool ret = true;
     FIL file;
     u64 fsize;
@@ -296,7 +296,7 @@ bool FileInjectFile(const char* dest, const char* orig, u64 off_dest, u64 off_or
         if (ret && !ShowProgress(pos + bytes_read, size, orig)) {
             if (flags && (*flags & NO_CANCEL)) {
                 ShowPrompt(false, "Cancel is not allowed here");
-            } else ret = !ShowPrompt(true, "B button detected. Cancel?");
+            } else ret = !ShowPrompt(true, "%s detected. Cancel?", isMTmodEnabled() ? "R+Select" : "B button");
             ShowProgress(0, 0, orig);
             ShowProgress(pos + bytes_read, size, orig);
         }
@@ -347,7 +347,7 @@ bool FileSetByte(const char* dest, u64 offset, u64 size, u8 fillbyte, u32* flags
         if (ret && !ShowProgress(pos + bytes_written, size, dest)) {
             if (flags && (*flags & NO_CANCEL)) {
                 ShowPrompt(false, "Cancel is not allowed here");
-            } else ret = !ShowPrompt(true, "B button detected. Cancel?");
+            } else ret = !ShowPrompt(true, "%s detected. Cancel?", isMTmodEnabled() ? "R+Select" : "B button");
             ShowProgress(0, 0, dest);
             ShowProgress(pos + bytes_written, size, dest);
         }
@@ -466,7 +466,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, 
     
     // the copy process takes place here
     if (!ShowProgress(0, 0, orig) && !(flags && (*flags & NO_CANCEL))) {
-        if (ShowPrompt(true, "%s\nB button detected. Cancel?", deststr)) return false;
+        if (ShowPrompt(true, "%s detected. Cancel?", isMTmodEnabled() ? "R+Select" : "B button")) return false;
         ShowProgress(0, 0, orig);
     }
     if (move && fvx_stat(dest, NULL) != FR_OK) { // moving if dest not existing
@@ -556,7 +556,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, 
             if (ret && !ShowProgress(pos + bytes_read, fsize, orig)) {
                 if (flags && (*flags & NO_CANCEL)) {
                     ShowPrompt(false, "%s\nCancel is not allowed here", deststr);
-                } else ret = !ShowPrompt(true, "%s\nB button detected. Cancel?", deststr);
+                } else ret = !ShowPrompt(true, "%s detected. Cancel?", isMTmodEnabled() ? "R+Select" : "B button");
                 ShowProgress(0, 0, orig);
                 ShowProgress(pos + bytes_read, fsize, orig);
             }

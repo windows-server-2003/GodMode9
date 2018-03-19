@@ -7,10 +7,13 @@
 #include "unittype.h"
 #include "aes.h"
 #include "sha.h"
+#include "multithread.h"
 
 // use NCCH crypto defines for everything 
 #define CRYPTO_DECRYPT  NCCH_NOCRYPTO
 #define CRYPTO_ENCRYPT  NCCH_STDCRYPTO
+
+#define FS_BUFFER_SIZE (isMTmodEnabled() ? 0x4000 : STD_BUFFER_SIZE)
 
 u32 GetNcchHeaders(NcchHeader* ncch, NcchExtHeader* exthdr, ExeFsHeader* exefs, FIL* file) {
     u32 offset_ncch = fvx_tell(file);
@@ -278,7 +281,7 @@ u32 VerifyTmdContent(const char* path, u64 offset, TmdContentChunk* chunk, const
     }
     fvx_lseek(&file, offset);
     
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) {
         fvx_close(&file);
         return 1;
@@ -286,8 +289,8 @@ u32 VerifyTmdContent(const char* path, u64 offset, TmdContentChunk* chunk, const
     
     GetTmdCtr(ctr, chunk);
     sha_init(SHA256_MODE);
-    for (u32 i = 0; i < size; i += STD_BUFFER_SIZE) {
-        u32 read_bytes = min(STD_BUFFER_SIZE, (size - i));
+    for (u32 i = 0; i < size; i += FS_BUFFER_SIZE) {
+        u32 read_bytes = min(FS_BUFFER_SIZE, (size - i));
         UINT bytes_read;
         fvx_read(&file, buffer, read_bytes, &bytes_read);
         if (encrypted) DecryptCiaContentSequential(buffer, read_bytes, ctr, titlekey);
@@ -587,7 +590,7 @@ u32 VerifyBossFile(const char* path) {
     if (encrypted) CryptBoss((void*) &boss, 0, sizeof(BossHeader), &boss);
     
     // set up a buffer
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) {
         fvx_close(&file);
         return 1;
@@ -598,13 +601,13 @@ u32 VerifyBossFile(const char* path) {
     sha_init(SHA256_MODE);
     
     GetBossPayloadHashHeader(buffer, &boss);
-    u32 read_bytes = min((STD_BUFFER_SIZE - BOSS_SIZE_PAYLOAD_HEADER), payload_size);
+    u32 read_bytes = min((FS_BUFFER_SIZE - BOSS_SIZE_PAYLOAD_HEADER), payload_size);
     fvx_read(&file, buffer + BOSS_SIZE_PAYLOAD_HEADER, read_bytes, &btr);
     if (encrypted) CryptBoss(buffer + BOSS_SIZE_PAYLOAD_HEADER, sizeof(BossHeader), read_bytes, &boss);
     sha_update(buffer, read_bytes + BOSS_SIZE_PAYLOAD_HEADER);
     
-    for (u32 i = read_bytes; i < payload_size; i += STD_BUFFER_SIZE) {
-        read_bytes = min(STD_BUFFER_SIZE, (payload_size - i));
+    for (u32 i = read_bytes; i < payload_size; i += FS_BUFFER_SIZE) {
+        read_bytes = min(FS_BUFFER_SIZE, (payload_size - i));
         fvx_read(&file, buffer, read_bytes, &btr);
         if (encrypted) CryptBoss(buffer, sizeof(BossHeader) + i, read_bytes, &boss);
         sha_update(buffer, read_bytes);
@@ -623,6 +626,8 @@ u32 VerifyBossFile(const char* path) {
 }
 
 u32 VerifyGameFile(const char* path) {
+	setBGOperationRunning(true);
+	setCurrentOperationId(OPERATION_VERIFY);
     u64 filetype = IdentifyFileType(path);
     if (filetype & GAME_CIA)
         return VerifyCiaFile(path);
@@ -637,6 +642,7 @@ u32 VerifyGameFile(const char* path) {
     else if (filetype & SYS_FIRM)
         return VerifyFirmFile(path);
     else return 1;
+	setBGOperationRunning(false);
 }
 
 u32 CheckEncryptedNcchFile(const char* path, u32 offset) {
@@ -799,7 +805,7 @@ u32 CryptNcchNcsdBossFirmFile(const char* orig, const char* dest, u32 mode, u16 
     }
     
     // set up buffer
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) {
         fvx_close(ofp);
         fvx_close(dfp);
@@ -809,8 +815,8 @@ u32 CryptNcchNcsdBossFirmFile(const char* orig, const char* dest, u32 mode, u16 
     u32 ret = 0;
     if (!ShowProgress(offset, fsize, dest)) ret = 1;
     if (mode & (GAME_NCCH|GAME_NCSD|GAME_BOSS|SYS_FIRM|GAME_NDS)) { // for NCCH / NCSD / BOSS / FIRM files
-        for (u64 i = 0; (i < size) && (ret == 0); i += STD_BUFFER_SIZE) {
-            u32 read_bytes = min(STD_BUFFER_SIZE, (size - i));
+        for (u64 i = 0; (i < size) && (ret == 0); i += FS_BUFFER_SIZE) {
+            u32 read_bytes = min(FS_BUFFER_SIZE, (size - i));
             UINT bytes_read, bytes_written;
             if (fvx_read(ofp, buffer, read_bytes, &bytes_read) != FR_OK) ret = 1;
             if (((mode & GAME_NCCH) && (CryptNcchSequential(buffer, i, read_bytes, crypto) != 0)) ||
@@ -840,8 +846,8 @@ u32 CryptNcchNcsdBossFirmFile(const char* orig, const char* dest, u32 mode, u16 
         GetTmdCtr(ctr, chunk);
         fvx_lseek(ofp, offset);
         sha_init(SHA256_MODE);
-        for (u64 i = 0; (i < size) && (ret == 0); i += STD_BUFFER_SIZE) {
-            u32 read_bytes = min(STD_BUFFER_SIZE, (size - i));
+        for (u64 i = 0; (i < size) && (ret == 0); i += FS_BUFFER_SIZE) {
+            u32 read_bytes = min(FS_BUFFER_SIZE, (size - i));
             if (fvx_read(ofp, buffer, read_bytes, &bytes_read) != FR_OK) ret = 1;
             if (cia_crypto && (DecryptCiaContentSequential(buffer, read_bytes, ctr, titlekey) != 0)) ret = 1;
             if (ncch_crypto && (CryptNcchSequential(buffer, i, read_bytes, crypto) != 0)) ret = 1;
@@ -1045,6 +1051,8 @@ u32 CryptGameFile(const char* path, bool inplace, bool encrypt) {
             return 1;
     }
     
+	setBGOperationRunning(true);
+	setCurrentOperationId(encrypt ? OPERATION_ENCRYPT : OPERATION_DECRYPT);
     if (filetype & GAME_CIA)
         ret = CryptCiaFile(path, destptr, crypto);
     else if (filetype & GAME_NUSCDN)
@@ -1054,6 +1062,7 @@ u32 CryptGameFile(const char* path, bool inplace, bool encrypt) {
     else if (filetype & (GAME_NCCH|GAME_NCSD|GAME_BOSS))
         ret = CryptNcchNcsdBossFirmFile(path, destptr, filetype, crypto, 0, 0, NULL, NULL);
     else ret = 1;
+	setBGOperationRunning(false);
     
     if (!inplace && (ret != 0))
         f_unlink(dest); // try to get rid of the borked file
@@ -1108,7 +1117,7 @@ u32 InsertCiaContent(const char* path_cia, const char* path_content, u32 offset,
     }
     
     // allocate buffer
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) {
         fvx_close(&ofile);
         fvx_close(&dfile);
@@ -1122,8 +1131,8 @@ u32 InsertCiaContent(const char* path_cia, const char* path_content, u32 offset,
     GetTmdCtr(ctr_in, chunk);
     GetTmdCtr(ctr_out, chunk);
     if (!ShowProgress(0, 0, path_content)) ret = 1;
-    for (u32 i = 0; (i < size) && (ret == 0); i += STD_BUFFER_SIZE) {
-        u32 read_bytes = min(STD_BUFFER_SIZE, (size - i));
+    for (u32 i = 0; (i < size) && (ret == 0); i += FS_BUFFER_SIZE) {
+        u32 read_bytes = min(FS_BUFFER_SIZE, (size - i));
         if (fvx_read(&ofile, buffer, read_bytes, &bytes_read) != FR_OK) ret = 1;
         if (cdn_decrypt && (DecryptCiaContentSequential(buffer, read_bytes, ctr_in, titlekey) != 0)) ret = 1;
         if (ncch_decrypt && (DecryptNcchSequential(buffer, i, read_bytes) != 0)) ret = 1;
@@ -1455,6 +1464,8 @@ u32 BuildCiaFromGameFile(const char* path, bool force_legit) {
         return 1;
     
     // build CIA from game file
+	setBGOperationRunning(true);
+	setCurrentOperationId(OPERATION_BUILD);
     if (filetype & GAME_TMD)
         ret = BuildCiaFromTmdFile(path, dest, force_legit, filetype & FLAG_NUSCDN);
     else if (filetype & GAME_NCCH)
@@ -1462,6 +1473,7 @@ u32 BuildCiaFromGameFile(const char* path, bool force_legit) {
     else if (filetype & GAME_NCSD)
         ret = BuildCiaFromNcsdFile(path, dest);
     else ret = 1;
+	setBGOperationRunning(false);
     
     if (ret != 0) // try to get rid of the borked file
         f_unlink(dest);
@@ -1485,6 +1497,8 @@ u32 DumpCxiSrlFromTmdFile(const char* path) {
         return 1;
         
     // get path to CXI/SRL and decrypt (if encrypted)
+	setBGOperationRunning(true);
+	setCurrentOperationId(OPERATION_EXTRACT);
     if ((strncmp(path + 1, ":/title/", 8) != 0) ||
         (GetTmdContentPath(path_cxi, path) != 0) ||
         (!((filetype = IdentifyFileType(path_cxi)) & (GAME_NCCH|GAME_NDS))) ||
@@ -1493,6 +1507,7 @@ u32 DumpCxiSrlFromTmdFile(const char* path) {
         if (*dname) fvx_unlink(dest);
         return 1;
     }
+	setBGOperationRunning(false);
     
     return 0;
 }
@@ -1765,7 +1780,7 @@ u32 BuildNcchInfoXorpads(const char* destdir, const char* path) {
     entry_size = (version == 3) ? NCCHINFO_V3_SIZE : sizeof(NcchInfoEntry);
     if (!version) ret = 1;
     
-    u8* buffer = (u8*) malloc(STD_BUFFER_SIZE);
+    u8* buffer = (u8*) malloc(FS_BUFFER_SIZE);
     if (!buffer) ret = 1;
     for (u32 i = 0; (i < info.n_entries) && (ret == 0); i++) {
         NcchInfoEntry entry;
@@ -1774,18 +1789,21 @@ u32 BuildNcchInfoXorpads(const char* destdir, const char* path) {
         if (FixNcchInfoEntry(&entry, version) != 0) ret = 1;
         if (ret != 0) break;
         
+		setBGOperationRunning(true);
+		setCurrentOperationId(OPERATION_BUILD);
         char dest[256]; // 256 is the maximum length of a full path
         snprintf(dest, 256, "%s/%s", destdir, entry.filename);
         if (fvx_open(&fp_xorpad, dest, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
             if (!ShowProgress(0, 0, entry.filename)) ret = 1;
-            for (u64 p = 0; (p < entry.size_b) && (ret == 0); p += STD_BUFFER_SIZE) {
-                UINT create_bytes = min(STD_BUFFER_SIZE, entry.size_b - p);
+            for (u64 p = 0; (p < entry.size_b) && (ret == 0); p += FS_BUFFER_SIZE) {
+                UINT create_bytes = min(FS_BUFFER_SIZE, entry.size_b - p);
                 if (BuildNcchInfoXorpad(buffer, &entry, create_bytes, p) != 0) ret = 1;
                 if (fvx_write(&fp_xorpad, buffer, create_bytes, &bt) != FR_OK) ret = 1;
                 if (!ShowProgress(p + create_bytes, entry.size_b, entry.filename)) ret = 1;
             }
             fvx_close(&fp_xorpad);
         } else ret = 1;
+		setBGOperationRunning(false);
         if (ret != 0) f_unlink(dest); // get rid of the borked file
     }
     
@@ -1886,6 +1904,8 @@ u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
     } else f_unlink(path_cxi);
     
     // copy / decrypt the source CXI
+	setBGOperationRunning(true);
+	setCurrentOperationId(OPERATION_INJECT);
     u32 ret = 0;
     if (CryptNcchNcsdBossFirmFile(path, path_cxi, GAME_NCCH, CRYPTO_DECRYPT, 0, 0, NULL, NULL) != 0)
         ret = 1;
@@ -1910,6 +1930,7 @@ u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
         f_rename(path_bak, path_cxi);
     }
     
+	setBGOperationRunning(false);
     return ret;
 }
 
