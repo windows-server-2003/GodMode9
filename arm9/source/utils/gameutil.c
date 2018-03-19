@@ -7,6 +7,7 @@
 #include "unittype.h"
 #include "aes.h"
 #include "sha.h"
+#include "multithread.h"
 
 // use NCCH crypto defines for everything 
 #define CRYPTO_DECRYPT  NCCH_NOCRYPTO
@@ -1045,6 +1046,8 @@ u32 CryptGameFile(const char* path, bool inplace, bool encrypt) {
             return 1;
     }
     
+    setCurrentOperationId(encrypt ? OPERATION_ENCRYPT : OPERATION_DECRYPT);
+    setBGOperationRunning(true);
     if (filetype & GAME_CIA)
         ret = CryptCiaFile(path, destptr, crypto);
     else if (filetype & GAME_NUSCDN)
@@ -1054,6 +1057,7 @@ u32 CryptGameFile(const char* path, bool inplace, bool encrypt) {
     else if (filetype & (GAME_NCCH|GAME_NCSD|GAME_BOSS))
         ret = CryptNcchNcsdBossFirmFile(path, destptr, filetype, crypto, 0, 0, NULL, NULL);
     else ret = 1;
+    setBGOperationRunning(false);
     
     if (!inplace && (ret != 0))
         f_unlink(dest); // try to get rid of the borked file
