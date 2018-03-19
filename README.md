@@ -16,7 +16,7 @@ At the initial release, operation speed was f..king slow and useless, but it's i
 Here is the proof :
 Seq. 85.1MB SD(0:) -> RAMDRIVE(9:)
 origin(1.6.0) : 15.38s
-MTmod v1.1    : 15.75s
+MTmod v1.1    : 16.57s
 MTmod v1.0    : 24.39s
 MTmod v0.0    : 137s <- wtf
 
