@@ -4,7 +4,7 @@ A multi-thread support variant of [GodMode9](https://github.com/d0k3/GodMode9)
 ## What you can do with this
 Browse dirs while copying/injecting/etc.!
 Browse while a script is running!
-Disable/Enable these feauture(you can't switch it while a background task is running though)
+Disable/Enable these feauture(you can't do while a background task is running though)
 
 ## What you can't do
 Process multiple file operations.
@@ -36,7 +36,7 @@ To build a .firm signed with SPI boot keys (for ntrboot and the like), run `make
 
 ## Usage
 Most usage is the same as the original [GodMode9](https://github.com/d0k3/GodMode9).
-If MTmod is enabled(default), you can press X+Y to cancel a background operation.
+If MTmod is enabled(default), you can press R+Select to terminate a background process.
 
 ## License
 You may use this under the terms of the GNU General Public License GPL v2 or under the terms of any later revisions of the GPL. Refer to the provided `LICENSE.txt` file for further information.
