@@ -1792,7 +1792,7 @@ u32 HomeMoreMenu(char* current_path) {
         if ((isBGOperationRunning()) && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
             (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
             DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
-                if (!ShowPrompt(true, "The SD will be unmounted and\nthe background process may fail.\nDo you want to continue"))
+                if (!ShowPrompt(true, "The SD will be unmounted and\nthe background process will fail.\nDo you want to continue?"))
                     return GODMODE_NO_EXIT;
         }
         bool sd_state = CheckSDMountState();
@@ -1811,6 +1811,11 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == bonus) { // setup bonus drive
+        if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_BONUS ||
+		DriveType(current_path_cur) & DRV_BONUS)) {
+                if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
+                    return GODMODE_NO_EXIT;
+        }
         if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) & (DRV_BONUS|DRV_IMAGE)))
             clipboard->n_entries = 0; // remove bonus drive clipboard entries
         if (!SetupBonusDrive()) ShowPrompt(false, "Setup failed!");
@@ -1819,6 +1824,11 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == multi) { // switch EmuNAND offset
+        if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_EMUNAND
+		|| DriveType(current_path_cur) & DRV_EMUNAND)) {
+                if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
+                    return GODMODE_NO_EXIT;
+        }
         while (ShowPrompt(true, "Current EmuNAND offset is %06X.\nSwitch to next offset?", GetEmuNandBase())) {
             if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) & DRV_EMUNAND))
                 clipboard->n_entries = 0; // remove EmuNAND clipboard entries
