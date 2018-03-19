@@ -159,7 +159,7 @@ size_t FileGetSize(const char* path) {
 }
 
 bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
-    setCurrentOperationId(OPERATION_SHA);
+    setCurrentOperationId(OPERATION_VERIFY);
     bool ret = true;
     FIL file;
     u64 fsize;

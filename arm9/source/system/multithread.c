@@ -35,9 +35,11 @@ char* getCurrentOperationStr() {
     if (curren_operation == OPERATION_COPY) return script_running ? "[script] Copying" : "Copying";
     else if (curren_operation == OPERATION_INJECT) return script_running ? "[script] Injecting" : "Injecting";
     else if (curren_operation == OPERATION_FILL) return script_running ? "[script] Filling" : "Filling";
-    else if (curren_operation == OPERATION_SHA) return script_running ? "[script] Calculating sha" : "Calculating sha";
+    else if (curren_operation == OPERATION_VERIFY) return script_running ? "[script] Calculating sha/verifying" : "Calculating sha/verifying";
     else if (curren_operation == OPERATION_FIND) return script_running ? "[script] Searching data" : "Searching data";
     else if (curren_operation == OPERATION_DECRYPT) return script_running ? "[script] Decrypting" : "Decrypting";
     else if (curren_operation == OPERATION_ENCRYPT) return script_running ? "[script] Encrypting" : "Encrypting";
+    else if (curren_operation == OPERATION_BUILD) return script_running ? "[script] Building" : "Building";
+    else if (curren_operation == OPERATION_EXTRACT) return script_running ? "[script] Extracting" : "Extracting";
     else return NULL;
 }

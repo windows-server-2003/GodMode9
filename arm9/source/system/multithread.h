@@ -4,13 +4,15 @@
 
 #define INTERVAL_SCROLL 170 // msec
 
-#define OPERATION_COPY    0
-#define OPERATION_INJECT  2
-#define OPERATION_FILL    3
-#define OPERATION_SHA     4
-#define OPERATION_FIND    5
-#define OPERATION_DECRYPT 6
-#define OPERATION_ENCRYPT 7
+#define OPERATION_COPY     0
+#define OPERATION_INJECT   2
+#define OPERATION_FILL     3
+#define OPERATION_VERIFY   4
+#define OPERATION_FIND     5
+#define OPERATION_DECRYPT  6
+#define OPERATION_ENCRYPT  7
+#define OPERATION_BUILD    8
+#define OPERATION_EXTRACT  9
 
 bool isMTmodEnabled();
 void setMTmodEnabled(bool enable);

@@ -1812,7 +1812,7 @@ u32 HomeMoreMenu(char* current_path) {
     }
     else if (user_select == bonus) { // setup bonus drive
         if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_BONUS ||
-		DriveType(current_path_cur) & DRV_BONUS)) {
+        DriveType(current_path_cur) & DRV_BONUS)) {
                 if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
                     return GODMODE_NO_EXIT;
         }
@@ -1825,7 +1825,7 @@ u32 HomeMoreMenu(char* current_path) {
     }
     else if (user_select == multi) { // switch EmuNAND offset
         if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_EMUNAND
-		|| DriveType(current_path_cur) & DRV_EMUNAND)) {
+        || DriveType(current_path_cur) & DRV_EMUNAND)) {
                 if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
                     return GODMODE_NO_EXIT;
         }
