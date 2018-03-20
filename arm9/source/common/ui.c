@@ -951,7 +951,7 @@ bool ShowProgress_org(u64 current, u64 total, const char* opstr)
 bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
 {
     if (current == 0 && total == 0) {
-        setBGOperationRunning(true);
+        setBGOperationRunning(true); // background started
         GodMode_redraw(); // screen may has been cleared, so redraw
     }
     static u32 last_prog_width = 0;
@@ -1029,7 +1029,7 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
         (exit_mode == GODMODE_EXIT_POWEROFF) ? "shutdown" : "reboot")) (exit_mode == GODMODE_EXIT_POWEROFF) ? PowerOff() : Reboot();
     last_file_msec = time_cur;
     
-    if (current == 1 && total == 1) setBGOperationRunning(false);
+    if (current == 1 && total == 1) setBGOperationRunning(false); // seems to be finished
     return !(HID_STATE & BUTTON_R1 && HID_STATE & BUTTON_SELECT);
 }
 

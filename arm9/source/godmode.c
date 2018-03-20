@@ -1010,34 +1010,34 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     // special stuff, only available for known filetypes (see int special below)
     bool mountable = (FTYPE_MOUNTABLE(filetype) && !(drvtype & DRV_IMAGE) &&
         !((drvtype & (DRV_SYSNAND|DRV_EMUNAND)) && (drvtype & DRV_VIRTUAL) && (filetype & IMG_FAT)));
-    bool verificable = (FYTPE_VERIFICABLE(filetype));
-    bool decryptable = (FYTPE_DECRYPTABLE(filetype));
-    bool encryptable = (FYTPE_ENCRYPTABLE(filetype));
+    bool verificable = (FYTPE_VERIFICABLE(filetype)) && !isScriptRunning() && !isBGOperationRunning();
+    bool decryptable = (FYTPE_DECRYPTABLE(filetype)) && !isScriptRunning() && !isBGOperationRunning();
+    bool encryptable = (FYTPE_ENCRYPTABLE(filetype)) && !isScriptRunning() && !isBGOperationRunning();
     bool cryptable_inplace = ((encryptable||decryptable) && !in_output_path && (drvtype & DRV_FAT));
-    bool cia_buildable = (FTYPE_CIABUILD(filetype));
-    bool cia_buildable_legit = (FTYPE_CIABUILD_L(filetype));
-    bool cxi_dumpable = (FTYPE_CXIDUMP(filetype));
-    bool tik_buildable = (FTYPE_TIKBUILD(filetype)) && !in_output_path;
-    bool key_buildable = (FTYPE_KEYBUILD(filetype)) && !in_output_path && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
+    bool cia_buildable = (FTYPE_CIABUILD(filetype)) && !isScriptRunning() && !isBGOperationRunning();
+    bool cia_buildable_legit = (FTYPE_CIABUILD_L(filetype)) && !isScriptRunning() && !isBGOperationRunning();
+    bool cxi_dumpable = (FTYPE_CXIDUMP(filetype) && !isScriptRunning() && !isBGOperationRunning());
+    bool tik_buildable = (FTYPE_TIKBUILD(filetype)) && !in_output_path && !isScriptRunning() && !isBGOperationRunning();
+    bool key_buildable = (FTYPE_KEYBUILD(filetype)) && !in_output_path && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND)) && !isScriptRunning() && !isBGOperationRunning();
     bool titleinfo = (FTYPE_TITLEINFO(filetype));
     bool renamable = (FTYPE_RENAMABLE(filetype));
-    bool transferable = (FTYPE_TRANSFERABLE(filetype) && IS_A9LH && (drvtype & DRV_FAT));
-    bool hsinjectable = (FTYPE_HASCODE(filetype));
+    bool transferable = (FTYPE_TRANSFERABLE(filetype) && IS_A9LH && (drvtype & DRV_FAT)) && !isScriptRunning() && !isBGOperationRunning();
+    bool hsinjectable = (FTYPE_HASCODE(filetype)) && !isScriptRunning() && !isBGOperationRunning();
     bool extrcodeable = (FTYPE_HASCODE(filetype));
     bool extrdiffable = (FTYPE_ISDISADIFF(filetype));
-    bool restorable = (FTYPE_RESTORABLE(filetype) && IS_A9LH && !(drvtype & DRV_SYSNAND));
-    bool ebackupable = (FTYPE_EBACKUP(filetype));
-    bool ncsdfixable = (FTYPE_NCSDFIXABLE(filetype));
-    bool xorpadable = (FTYPE_XORPAD(filetype));
+    bool restorable = (FTYPE_RESTORABLE(filetype) && IS_A9LH && !(drvtype & DRV_SYSNAND)) && !isScriptRunning() && !isBGOperationRunning();
+    bool ebackupable = (FTYPE_EBACKUP(filetype)) && !isScriptRunning() && !isBGOperationRunning();
+    bool ncsdfixable = (FTYPE_NCSDFIXABLE(filetype)) && !isScriptRunning() && !isBGOperationRunning();
+    bool xorpadable = (FTYPE_XORPAD(filetype)) && !isScriptRunning() && !isBGOperationRunning();
     bool keyinitable = (FTYPE_KEYINIT(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
-    bool keyinstallable = (FTYPE_KEYINSTALL(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
+    bool keyinstallable = (FTYPE_KEYINSTALL(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND)) && !isScriptRunning() && !isBGOperationRunning();
     bool scriptable = (FTYPE_SCRIPT(filetype) && !isScriptRunning() && !isBGOperationRunning());
     bool fontable = (FTYPE_FONT(filetype));
     bool viewable = (FTYPE_GFX(filetype));
     bool bootable = (FTYPE_BOOTABLE(filetype));
-    bool installable = (FTYPE_INSTALLABLE(filetype));
-    bool agbexportable = (FTPYE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
-    bool agbimportable = (FTPYE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
+    bool installable = (FTYPE_INSTALLABLE(filetype) && !isScriptRunning() && !isBGOperationRunning());
+    bool agbexportable = (FTPYE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND)) && !isScriptRunning() && !isBGOperationRunning();
+    bool agbimportable = (FTPYE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND)) && !isScriptRunning() && !isBGOperationRunning();
     
     char cxi_path[256] = { 0 }; // special options for TMD
     if ((filetype & GAME_TMD) && !(filetype & FLAG_NUSCDN) &&
@@ -1115,7 +1115,11 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     int user_select = ShowSelectPrompt(n_opt, optionstr, (n_marked > 1) ?
         "%s\n%(%lu files selected)" : "%s", pathstr, n_marked);
     if (user_select == hexviewer) { // -> show in hex viewer
-        FileHexViewer(file_path);
+        // backup current path string
+        char file_bak[256];
+        strncpy(file_bak, file_path, 255);
+        
+        FileHexViewer(file_bak);
         GetDirContents(current_dir, current_path);
         return 0;
     }

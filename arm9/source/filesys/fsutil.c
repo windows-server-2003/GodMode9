@@ -198,7 +198,6 @@ bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
 }
 
 u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
-    setCurrentOperationId(OPERATION_FIND);
     FIL file; // used for FAT & virtual
     u64 found = (u64) -1;
     u64 fsize = FileGetSize(path);
@@ -210,6 +209,8 @@ u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
     if (!buffer) return false;
     
     // main routine
+    setCurrentOperationId(OPERATION_FIND);
+    setBGOperationRunning(true);
     for (u32 pass = 0; pass < 2; pass++) {
         bool show_progress = false;
         u64 pos = (pass == 0) ? offset_file : 0;
@@ -235,6 +236,7 @@ u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
                 break;
         }
     }
+    setBGOperationRunning(false);
     
     free(buffer);
     fvx_close(&file);
