@@ -92,8 +92,8 @@ void GetTimeString(char* timestr, bool forced_update, bool full_year) {
         get_dstime(&dstime);
         timer = timer_start();
     }
-	if (timestr) snprintf(timestr, 31, isJapaneseClockUsed() ? "%s%lX %lX/%lX %lX:%lX" : "%s%02lX-%02lX-%02lX %02lX:%02lX",
-		full_year ? "20" : "", 
+	if (timestr) snprintf(timestr, 31, isJapaneseClockUsed() ? "%s%lX %lX/%lX %lX:%02lX" : "%s%02lX-%02lX-%02lX %02lX:%02lX",
+		full_year ? "20" : "",
 		(u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D, (u32) dstime.bcd_h, (u32) dstime.bcd_m);
 }
 
@@ -1944,7 +1944,7 @@ u32 GodMode(int entrypoint) {
     InitExtFS();
 	
 	// load config
-	LoadConfig();
+	if (!LoadConfig()) ShowPrompt(false, "failed to load configuration file!");
     
     // custom font handling
     if (CheckSupportFile("font.pbm")) {

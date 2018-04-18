@@ -27,6 +27,16 @@ bool isJapaneseClockUsed() {
 	return use_jpn_clock;
 }
 
+bool validateConfig(Config* save) {
+	bool ret = true;
+	if (strncmp(save->signature, "GM9CONF", 7) != 0) ret = false;
+	if (save->reserved != 0) ret = false;
+	if (save->screen_brightness < -1 || save->screen_brightness > 15) ret = false;
+	if (save->show_space != true && save->show_space != false) ret = false; 
+	if (save->use_jpn_clock != true && save->use_jpn_clock != false) ret = false; 
+	return ret;
+}
+
 bool SaveConfig() {
 	Config* save = malloc(sizeof(Config));
 	memcpy(save->signature, "GM9CONF", 8);
@@ -48,7 +58,7 @@ bool LoadConfig() {
 	bool ret;
 	ret = (FileGetData("0:/gm9/config.bin", save, sizeof(Config), 0) == sizeof(Config));
 	
-	if (ret) {
+	if (ret && validateConfig(save)) {
 		screen_brightness = save->screen_brightness;
 		show_space = save->show_space;
 		use_jpn_clock = save->use_jpn_clock;
