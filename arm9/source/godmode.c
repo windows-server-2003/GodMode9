@@ -19,6 +19,7 @@
 #include "power.h"
 #include "vram0.h"
 #include "i2c.h"
+#include "config.h"
 
 
 #define N_PANES 2
@@ -91,8 +92,9 @@ void GetTimeString(char* timestr, bool forced_update, bool full_year) {
         get_dstime(&dstime);
         timer = timer_start();
     }
-    if (timestr) snprintf(timestr, 31, "%s%02lX-%02lX-%02lX %02lX:%02lX", full_year ? "20" : "",
-        (u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D, (u32) dstime.bcd_h, (u32) dstime.bcd_m);
+	if (timestr) snprintf(timestr, 31, isJapaneseClockUsed() ? "%s%lX %lX/%lX %lX:%lX" : "%s%02lX-%02lX-%02lX %02lX:%02lX",
+		full_year ? "20" : "", 
+		(u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D, (u32) dstime.bcd_h, (u32) dstime.bcd_m);
 }
 
 void CheckBattery(u32* battery, bool* is_charging) {
@@ -164,8 +166,7 @@ void DrawTopBar(const char* curr_path) {
     DrawStringF(TOP_SCREEN, bartxt_x, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, tempstr);
     bool show_time = true;
     
-    #ifdef SHOW_FREE
-    if (*curr_path) { // free & total storage
+    if (isSpaceShown() && *curr_path) { // free & total storage
         const u32 bartxt_rx = SCREEN_WIDTH_TOP - (19*FONT_WIDTH_EXT) - bartxt_x;
         char bytestr0[32];
         char bytestr1[32];
@@ -176,7 +177,6 @@ void DrawTopBar(const char* curr_path) {
         DrawStringF(TOP_SCREEN, bartxt_rx, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, "%19.19s", tempstr);
         show_time = false;
     }
-    #endif
     
     #ifdef MONITOR_HEAP
     if (true) { // allocated mem
@@ -196,7 +196,7 @@ void DrawTopBar(const char* curr_path) {
         const u32 clock_x = battery_x - (15*FONT_WIDTH_EXT);
         
         char timestr[32];
-        GetTimeString(timestr, false, false);
+        GetTimeString(timestr, false, isJapaneseClockUsed());
         DrawStringF(TOP_SCREEN, clock_x, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, "%14.14s", timestr);
         
         u8 bitmap[battery_width * battery_height * BYTES_PER_PIXEL];
@@ -1942,6 +1942,9 @@ u32 GodMode(int entrypoint) {
     AutoEmuNandBase(true);
     InitNandCrypto(entrypoint != ENTRY_B9S);
     InitExtFS();
+	
+	// load config
+	LoadConfig();
     
     // custom font handling
     if (CheckSupportFile("font.pbm")) {
@@ -2402,11 +2405,13 @@ u32 GodMode(int entrypoint) {
             int reboot = ++n_opt;
             int scripts = ++n_opt;
             int payloads = ++n_opt;
+			int config = ++n_opt;
             int more = ++n_opt;
             if (poweroff > 0) optionstr[poweroff - 1] = "Poweroff system";
             if (reboot > 0) optionstr[reboot - 1] = "Reboot system";
             if (scripts > 0) optionstr[scripts - 1] = "Scripts...";
             if (payloads > 0) optionstr[payloads - 1] = "Payloads...";
+			if (config > 0) optionstr[config - 1] = "Configuration";
             if (more > 0) optionstr[more - 1] = "More...";
             
             int user_select = 0;
@@ -2427,7 +2432,10 @@ u32 GodMode(int entrypoint) {
                     if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
                     else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm"))
                         BootFirmHandler(loadpath, false, false);
-                }
+                } else if (user_select == config) {
+					ConfigMenu();
+					break;
+				}
             }
             
             if (user_select == poweroff) { 
