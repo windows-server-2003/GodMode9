@@ -2,66 +2,51 @@
 #include "hid.h"
 #include "ui.h"
 #include "fsutil.h"
+#include "vff.h"
 
 int screen_brightness = -1;
 bool show_space = false;
 bool use_jpn_clock = false;
+char font_path[256] = { 0 };
 
-typedef struct {
-	char signature[8]; // "GM9CONF"
-	u64 reserved;
-	int screen_brightness;
-	bool show_space;
-	bool use_jpn_clock;
-} __attribute__ ((packed)) Config;
+// getters
+int GetScreenBrightnessConfig() { return screen_brightness; }
+bool isSpaceShown()             { return show_space; }
+bool isJapaneseClockUsed()      { return use_jpn_clock; }
+char* GetFontPathConfig()       { return font_path; }
 
-int GetScreenBrightnessConfig() {
-	return screen_brightness;
+// setters
+void SetFontPathConfig(const char* path) {
+	if (path)
+		snprintf(font_path, 255, path);
+	else *font_path = '\0';
+	SaveConfig();
 }
 
-bool isSpaceShown() {
-	return show_space;
-}
-
-bool isJapaneseClockUsed() {
-	return use_jpn_clock;
-}
-
-bool validateConfig(Config* save) {
-	bool ret = true;
-	if (strncmp(save->signature, "GM9CONF", 7) != 0) ret = false;
-	if (save->reserved != 0) ret = false;
-	if (save->screen_brightness < -1 || save->screen_brightness > 15) ret = false;
-	if (save->show_space != true && save->show_space != false) ret = false; 
-	if (save->use_jpn_clock != true && save->use_jpn_clock != false) ret = false; 
-	return ret;
+void fixConfig() {
+	if (screen_brightness < -1 || screen_brightness > 15) screen_brightness = -1;
+	if (strnlen(font_path, 256) == 256) *font_path = '\0';
 }
 
 bool SaveConfig() {
-	Config save;
-	memcpy(save.signature, "GM9CONF", 8);
-	save.reserved = 0;
-	save.screen_brightness = screen_brightness;
-	save.show_space = show_space;
-	save.use_jpn_clock = use_jpn_clock;
-	
-	bool ret;
-	ret = FileSetData("0:/gm9/config.bin", &save, sizeof(Config), 0, true);
-	
-	return ret;
+	DirCreate("0:/gm9", "config");
+	return FileSetData("0:/gm9/config/brightness", &screen_brightness, sizeof(int) , 0, true) &&
+		   FileSetData("0:/gm9/config/show_space", &show_space       , sizeof(bool), 0, true) &&
+		   FileSetData("0:/gm9/config/jpn_clock" , &use_jpn_clock    , sizeof(bool), 0, true) &&
+		   FileSetData("0:/gm9/config/font_path" , font_path         , 256         , 0, true);  
 }
 
 bool LoadConfig() {
-	Config save;
+	bool ret = FileGetData("0:/gm9/config/brightness", &screen_brightness, sizeof(int) , 0) == sizeof(int)  &&
+		       FileGetData("0:/gm9/config/show_space", &show_space       , sizeof(bool), 0) == sizeof(bool) &&
+		       FileGetData("0:/gm9/config/jpn_clock" , &use_jpn_clock    , sizeof(bool), 0) == sizeof(bool) &&
+			   FileGetData("0:/gm9/config/font_path" , font_path         , 256         , 0) == 256;
 	
-	bool ret;
-	ret = (FileGetData("0:/gm9/config.bin", &save, sizeof(Config), 0) == sizeof(Config));
-	
-	if (ret && validateConfig(&save)) {
-		screen_brightness = save.screen_brightness;
-		show_space = save.show_space;
-		use_jpn_clock = save.use_jpn_clock;
+	if (!ret) { // create new files
+		fixConfig();
+		return SaveConfig();
 	}
+	
 	return ret;
 }
 
@@ -109,6 +94,9 @@ void ConfigMenu() {
         if (pad_state & BUTTON_DOWN) sel = (sel+1) % n_opt;
         else if (pad_state & BUTTON_UP) sel = (sel+n_opt-1) % n_opt;
         else if (pad_state & BUTTON_B) break;
+		else if (pad_state & BUTTON_X) {
+			*font_path = '\0';
+		}
 		else if (pad_state & (BUTTON_LEFT | BUTTON_RIGHT)) {
 			if (sel == option_brightness) {
 				screen_brightness += ((pad_state & BUTTON_RIGHT) ? 1 : -1);

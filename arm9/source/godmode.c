@@ -92,7 +92,7 @@ void GetTimeString(char* timestr, bool forced_update, bool full_year) {
         get_dstime(&dstime);
         timer = timer_start();
     }
-	if (timestr) snprintf(timestr, 31, isJapaneseClockUsed() ? "%s%lX %lX/%lX %lX:%02lX" : "%s%02lX-%02lX-%02lX %02lX:%02lX",
+	if (timestr) snprintf(timestr, 31, isJapaneseClockUsed() ? "%s%lX %lX/%lX %02lX:%02lX" : "%s%02lX-%02lX-%02lX %02lX:%02lX",
 		full_year ? "20" : "",
 		(u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D, (u32) dstime.bcd_h, (u32) dstime.bcd_m);
 }
@@ -1722,6 +1722,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         if (pbm_size) SetFontFromPbm(pbm, pbm_size);
         ClearScreenF(true, true, COLOR_STD_BG);
         free(pbm);
+		SetFontPathConfig(file_path);
         return 0;
     }
     else if (user_select == view) { // view gfx
@@ -1947,7 +1948,15 @@ u32 GodMode(int entrypoint) {
 	if (!LoadConfig()) ShowPrompt(false, "failed to load configuration file!");
     
     // custom font handling
-    if (CheckSupportFile("font.pbm")) {
+	char* font_path = GetFontPathConfig();
+	if (*font_path) {
+        u8* pbm = (u8*) malloc(0x10000); // arbitrary, should be enough by far
+        if (pbm) {
+			u32 pbm_size = FileGetData(font_path, pbm, 0x10000, 0);
+			if (pbm_size) SetFontFromPbm(pbm, pbm_size);
+			free(pbm);
+		}
+	} else if (CheckSupportFile("font.pbm")) {
         u8* pbm = (u8*) malloc(0x10000); // arbitrary, should be enough by far
         if (pbm) {
             u32 pbm_size = LoadSupportFile("font.pbm", pbm, 0x10000);
