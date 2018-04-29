@@ -92,9 +92,9 @@ void GetTimeString(char* timestr, bool forced_update, bool full_year) {
         get_dstime(&dstime);
         timer = timer_start();
     }
-	if (timestr) snprintf(timestr, 31, isJapaneseClockUsed() ? "%s%lX %lX/%lX %02lX:%02lX" : "%s%02lX-%02lX-%02lX %02lX:%02lX",
-		full_year ? "20" : "",
-		(u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D, (u32) dstime.bcd_h, (u32) dstime.bcd_m);
+    if (timestr) snprintf(timestr, 31, isJapaneseClockUsed() ? "%s%lX %lX/%lX %02lX:%02lX" : "%s%02lX-%02lX-%02lX %02lX:%02lX",
+        full_year ? "20" : "",
+        (u32) dstime.bcd_Y, (u32) dstime.bcd_M, (u32) dstime.bcd_D, (u32) dstime.bcd_h, (u32) dstime.bcd_m);
 }
 
 void CheckBattery(u32* battery, bool* is_charging) {
@@ -177,7 +177,7 @@ void DrawTopBar(const char* curr_path) {
         DrawStringF(TOP_SCREEN, bartxt_rx, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, "%19.19s", tempstr);
         show_time = false;
     }
-	
+    
     #ifdef MONITOR_HEAP
     if (true) { // allocated mem
         const u32 bartxt_rx = SCREEN_WIDTH_TOP - (9*FONT_WIDTH_EXT) - bartxt_x;
@@ -1722,7 +1722,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         if (pbm_size) SetFontFromPbm(pbm, pbm_size);
         ClearScreenF(true, true, COLOR_STD_BG);
         free(pbm);
-		SetFontPathConfig(file_path);
+        SetFontPathConfig(file_path);
         return 0;
     }
     else if (user_select == view) { // view gfx
@@ -1943,20 +1943,19 @@ u32 GodMode(int entrypoint) {
     AutoEmuNandBase(true);
     InitNandCrypto(entrypoint != ENTRY_B9S);
     InitExtFS();
-	
-	// load config
-	if (!LoadConfig()) ShowPrompt(false, "failed to load configuration file!");
+    
+    if (!LoadConfig()) ShowPrompt(false, "failed to load configuration file!");
     
     // custom font handling
-	char* font_path = GetFontPathConfig();
-	if (*font_path) {
+    char* font_path = GetFontPathConfig();
+    if (*font_path) {
         u8* pbm = (u8*) malloc(0x10000); // arbitrary, should be enough by far
         if (pbm) {
-			u32 pbm_size = FileGetData(font_path, pbm, 0x10000, 0);
-			if (pbm_size) SetFontFromPbm(pbm, pbm_size);
-			free(pbm);
-		}
-	} else if (CheckSupportFile("font.pbm")) {
+            u32 pbm_size = FileGetData(font_path, pbm, 0x10000, 0);
+            if (pbm_size) SetFontFromPbm(pbm, pbm_size);
+            free(pbm);
+        }
+    } else if (CheckSupportFile("font.pbm")) {
         u8* pbm = (u8*) malloc(0x10000); // arbitrary, should be enough by far
         if (pbm) {
             u32 pbm_size = LoadSupportFile("font.pbm", pbm, 0x10000);
@@ -2414,13 +2413,13 @@ u32 GodMode(int entrypoint) {
             int reboot = ++n_opt;
             int scripts = ++n_opt;
             int payloads = ++n_opt;
-			int config = ++n_opt;
+            int config = ++n_opt;
             int more = ++n_opt;
             if (poweroff > 0) optionstr[poweroff - 1] = "Poweroff system";
             if (reboot > 0) optionstr[reboot - 1] = "Reboot system";
             if (scripts > 0) optionstr[scripts - 1] = "Scripts...";
             if (payloads > 0) optionstr[payloads - 1] = "Payloads...";
-			if (config > 0) optionstr[config - 1] = "Configuration";
+            if (config > 0) optionstr[config - 1] = "Configuration";
             if (more > 0) optionstr[more - 1] = "More...";
             
             int user_select = 0;
@@ -2442,9 +2441,9 @@ u32 GodMode(int entrypoint) {
                     else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm"))
                         BootFirmHandler(loadpath, false, false);
                 } else if (user_select == config) {
-					ConfigMenu();
-					break;
-				}
+                    ConfigMenu();
+                    break;
+                }
             }
             
             if (user_select == poweroff) { 
