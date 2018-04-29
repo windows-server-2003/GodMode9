@@ -9,6 +9,7 @@ bool show_space = false;
 bool use_jpn_clock = false;
 char font_path[256] = { 0 };
 
+
 // getters
 int GetScreenBrightnessConfig() { return screen_brightness; }
 bool isSpaceShown()             { return show_space; }
@@ -26,6 +27,13 @@ void SetFontPathConfig(const char* path) {
 void fixConfig() {
 	if (screen_brightness < -1 || screen_brightness > 15) screen_brightness = -1;
 	if (strnlen(font_path, 256) == 256) *font_path = '\0';
+}
+
+void initConfig() {
+	screen_brightness = -1;
+	show_space = false;
+	use_jpn_clock = false;
+	*font_path = '\0';
 }
 
 bool SaveConfig() {
@@ -96,6 +104,14 @@ void ConfigMenu() {
         else if (pad_state & BUTTON_B) break;
 		else if (pad_state & BUTTON_X) {
 			*font_path = '\0';
+			if (CheckSupportFile("font.pbm")) {
+				u8* pbm = (u8*) malloc(0x10000); // arbitrary, should be enough by far
+				if (pbm) {
+					u32 pbm_size = LoadSupportFile("font.pbm", pbm, 0x10000);
+					if (pbm_size) SetFontFromPbm(pbm, pbm_size);
+					free(pbm);
+				}
+			} else SetFontFromPbm(NULL, 0); // from VRAM
 		}
 		else if (pad_state & (BUTTON_LEFT | BUTTON_RIGHT)) {
 			if (sel == option_brightness) {
