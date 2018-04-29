@@ -1498,16 +1498,26 @@ u32 DumpCxiSrlFromTmdFile(const char* path) {
 }
 
 u32 ExtractCodeFromCxiFile(const char* path, const char* path_out, char* extstr) {
+    u64 filetype = IdentifyFileType(path);
     char dest[256];
     if (!path_out && (fvx_rmkdir(OUTPUT_PATH) != FR_OK)) return 1;
     strncpy(dest, path_out ? path_out : OUTPUT_PATH, 256);
     if (!CheckWritePermissions(dest)) return 1;
     
+    // NCSD handling
+    u32 ncch_offset = 0;
+    if (filetype & GAME_NCSD) {
+        NcsdHeader ncsd;
+        if (LoadNcsdHeader(&ncsd, path) == 0)
+            ncch_offset = ncsd.partitions[0].offset * NCSD_MEDIA_UNIT;
+        else return 1;
+    }
+
     // load all required headers
     NcchHeader ncch;
     NcchExtHeader exthdr;
     ExeFsHeader exefs;
-    if (LoadNcchHeaders(&ncch, &exthdr, &exefs, path, 0) != 0) return 1;
+    if (LoadNcchHeaders(&ncch, &exthdr, &exefs, path, ncch_offset) != 0) return 1;
     
     // find ".code" or ".firm" inside the ExeFS header
     u32 code_size = 0;
@@ -1526,7 +1536,7 @@ u32 ExtractCodeFromCxiFile(const char* path, const char* path_out, char* extstr)
     if (exthdr.flag & 0x1) {
         u8 footer[8];
         if (code_size < 8) return 1;
-        if ((fvx_qread(path, footer, code_offset + code_size - 8, 8, NULL) != FR_OK) ||
+        if ((fvx_qread(path, footer, ncch_offset + code_offset + code_size - 8, 8, NULL) != FR_OK) ||
             (DecryptNcch(footer, code_offset + code_size - 8, 8, &ncch, &exefs) != 0))
             return 1;
         u32 unc_size = GetCodeLzssUncompressedSize(footer, code_size);
@@ -1541,7 +1551,7 @@ u32 ExtractCodeFromCxiFile(const char* path, const char* path_out, char* extstr)
     }
     
     // load .code
-    if ((fvx_qread(path, code, code_offset, code_size, NULL) != FR_OK) ||
+    if ((fvx_qread(path, code, ncch_offset + code_offset, code_size, NULL) != FR_OK) ||
         (DecryptNcch(code, code_offset, code_size, &ncch, &exefs) != 0)) {
         free(code);
         return 1;
@@ -1891,13 +1901,15 @@ u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
     if (CryptNcchNcsdBossFirmFile(path, path_cxi, GAME_NCCH, CRYPTO_DECRYPT, 0, 0, NULL, NULL) != 0)
         ret = 1;
     
-    // fix up the injected H&S NCCH header / extheader (copy H&S signature, title ID to multiple locations) 
+    // fix up the injected H&S NCCH header / extheader (copy H&S signature, title ID to multiple locations)
+    // also set savedata size to zero (thanks @TurdPooCharger)
     if ((ret == 0) && (LoadNcchHeaders(&ncch, &exthdr, NULL, path_cxi, 0) == 0)) {
         ncch.programId = tid_hs;
         ncch.partitionId = tid_hs;
         exthdr.jump_id = tid_hs;
         exthdr.aci_title_id = tid_hs;
         exthdr.aci_limit_title_id = tid_hs;
+        exthdr.savedata_size = 0;
         memcpy(ncch.signature, sig, 0x100);
         sha_quick(ncch.hash_exthdr, &exthdr, 0x400, SHA256_MODE);
         if ((fvx_qwrite(path_cxi, &ncch, 0, sizeof(NcchHeader), NULL) != FR_OK) ||

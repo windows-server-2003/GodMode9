@@ -221,6 +221,26 @@ fdummy $[DUMMY] 400
 fill $[DUMMY]@100:100 FF
 fill $[DUMMY]@300 80
 
+# 'fset' COMMAND
+# This command sets a portition of a file with the specified data in hex
+# The syntax is: fset destination@x hexdata
+#                x: destination offset (in hex)
+#                y: bytes to write (in hex) (must be lower than hexdata size)
+# If x is not given, data is inserted at the beginning of the file
+# If y is not given, all of hexdata is written to the file
+# -e / --flip_endian flips the order of the bytes
+fset $[DUMMY]@100 48454c4c4f # 'HELLO'
+
+# 'fget' COMMAND
+# This command reads data from a file and stores it in a var
+# The syntax is: fset origin@x:y var
+#                x: origin offset (in hex)
+#                y: origin size, starting at x (in hex)
+# Both x and y have to be set(!)
+# -e / --flip_endian flips the order of the bytes
+fget -e $[DUMMY]@100:5 OLLEH
+echo "This is 'HELLO', in hex and reverse:\n$[OLLEH]"
+
 # 'fixcmac' COMMAND
 # Use this to fix the CMACs for a file or a whole folder (recursively)
 # This will count as success if a file does not contain a CMAC
@@ -247,6 +267,29 @@ verify S:/firm1.bin
 # CIA files will always be built to the standard output directory (0:/gm9/out)
 # -l / --legit force CIA to be legit (only works for legit system installed titles)
 # buildcia 0:/x.ncch
+
+# 'sdump' COMMAND
+# This command dumps a supported file to the standard output directory (0:/gm9/out)
+# Supported files: encTitleKeys.bin, decTitleKeys.bin, seeddb.bin
+# -w / --overwrite overwrite existing files without asking
+# sdump encTitleKeys.bin
+# sdump decTitleKeys.bin
+# sdump seeddb.bin
+
+# 'applyips' COMMAND
+# This will apply the given IPS-formatted delta patch (argument 1) to the specified file (argument 2)
+# to produce the patched file (argument 3). 2 and 3 may be the same to perform an in-place patch.
+# applyips 0:/example/patch.ips 0:/data/original.bin 0:/game/modded.bin
+
+# 'applybps' COMMAND
+# This will apply the given BPS-formatted delta patch (argument 1) to the specified file (argument 2)
+# to produce the patched file (argument 3).
+# applybps 0:/example/patch.bps 0:/data/original.bin 0:/game/modded.bin
+
+# 'applybpm' COMMAND
+# This will apply the given BPM-formatted delta patch (argument 1) to the specified directory (argument 2)
+# to produce a directory containing patched files (argument 3).
+# applybpm 0:/example/patch.bpm 0:/data/originalfolder 0:/game/moddedfolder
 
 # 'boot' COMMAND
 # Use this command to chainload a compatible FIRM

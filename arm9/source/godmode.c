@@ -62,7 +62,7 @@ u32 SplashInit(const char* modestr) {
 
     if (splash) {
         bitmap = PNG_Decompress(splash, splash_size, &splash_width, &splash_height);
-        DrawBitmap(TOP_SCREEN, -1, -1, splash_width, splash_height, bitmap);
+        if (bitmap) DrawBitmap(TOP_SCREEN, -1, -1, splash_width, splash_height, bitmap);
     } else DrawStringF(TOP_SCREEN, 10, 10, COLOR_STD_FONT, COLOR_TRANSPARENT, "(" VRAM0_SPLASH_PNG " not found)");
 
     if (modestr) DrawStringF(TOP_SCREEN, SCREEN_WIDTH_TOP - 10 - GetDrawStringWidth(modestr),
@@ -177,7 +177,7 @@ void DrawTopBar(const char* curr_path) {
         DrawStringF(TOP_SCREEN, bartxt_rx, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, "%19.19s", tempstr);
         show_time = false;
     }
-    
+	
     #ifdef MONITOR_HEAP
     if (true) { // allocated mem
         const u32 bartxt_rx = SCREEN_WIDTH_TOP - (9*FONT_WIDTH_EXT) - bartxt_x;
@@ -326,7 +326,7 @@ void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
             snprintf(tempstr, str_width + 1, "%s%10.10s", namestr,
                 (curr_entry->type == T_DIR) ? "(dir)" : (curr_entry->type == T_DOTDOT) ? "(..)" : bytestr);
         } else snprintf(tempstr, str_width + 1, "%-*.*s", str_width, str_width, "");
-        DrawStringF(ALT_SCREEN, pos_x, pos_y, color_font, COLOR_STD_BG, tempstr);
+        DrawStringF(ALT_SCREEN, pos_x, pos_y, color_font, COLOR_STD_BG, "%s", tempstr);
         pos_y += stp_y;
     }
     
@@ -1820,7 +1820,7 @@ u32 HomeMoreMenu(char* current_path) {
             ShowString("Building " TIKDB_NAME_ENC "...");
             tik_enc_sys = (BuildTitleKeyInfo("1:/dbs/ticket.db", false, false) == 0);
             tik_enc_emu = (BuildTitleKeyInfo("4:/dbs/ticket.db", false, false) == 0);
-            if (BuildTitleKeyInfo(NULL, false, true) != 0)
+            if (!tik_enc_sys || BuildTitleKeyInfo(NULL, false, true) != 0)
                 tik_enc_sys = tik_enc_emu = false;
         }
         bool tik_dec_sys = false;
@@ -2001,7 +2001,7 @@ u32 GodMode(int entrypoint) {
     #else // standard behaviour
     bootmenu = bootmenu || (bootloader && CheckButton(BOOTMENU_KEY)); // second check for boot menu keys
     #endif
-    while (CheckButton(BOOTPAUSE_KEY)); // don't continue while these keys is held
+    while (CheckButton(BOOTPAUSE_KEY)); // don't continue while these keys are held
     if (show_splash) while (timer_msec( timer ) < 500); // show splash for at least 0.5 sec
     
     // bootmenu handler
@@ -2500,7 +2500,7 @@ u32 ScriptRunner(int entrypoint) {
     InitNandCrypto(entrypoint != ENTRY_B9S);
     InitExtFS();
     
-    while (HID_STATE); // wait until no buttons are pressed
+    while (CheckButton(BOOTPAUSE_KEY)); // don't continue while these keys are held
     while (timer_msec( timer ) < 500); // show splash for at least 0.5 sec
     
     if (PathExist("V:/" VRAM0_AUTORUN_GM9)) {
