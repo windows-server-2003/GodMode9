@@ -614,7 +614,7 @@ bool BuildVGameFirmDir(void) {
             u8* buffer = (u8*) malloc(section->size);
             if (buffer) {
                 if (ReadGameImageBytes(buffer, section->offset, section->size) != 0) break;
-                for (u32 s = 0; (s < section->size - 0x400) && (!offset_p9); s += 0x10) {
+                for (u32 s = 0; (s + 0x400 < section->size) && (!offset_p9); s += 0x10) {
                     if ((ValidateNcchHeader((NcchHeader*) (void*) (buffer + s)) == 0) &&
                         (ReadGameImageBytes((u8*) name, section->offset + s + 0x200, 8) == 0)) {
                         offset_p9 = section->offset + s;
@@ -674,10 +674,11 @@ bool BuildVGameTadDir(void) {
     u32 n = 0;
     
     // read header, setup table
+    u8 hdr_data[TAD_HEADER_LEN];
+    TadHeader* hdr = (TadHeader*) hdr_data;
     TadContentTable tbl;
-    TadHeader hdr;
-    ReadGameImageBytes(&hdr, TAD_HEADER_OFFSET, TAD_HEADER_LEN);
-    if (BuildTadContentTable(&tbl, &hdr) != 0) {
+    ReadGameImageBytes(hdr_data, TAD_HEADER_OFFSET, TAD_HEADER_LEN);
+    if (BuildTadContentTable(&tbl, hdr_data) != 0) {
         n_templates_tad = 0;
         return false;
     }
@@ -711,17 +712,17 @@ bool BuildVGameTadDir(void) {
     
     // contents
     for (u32 i = 0; i < TAD_NUM_CONTENT; content_offset = tbl.content_end[i++]) {
-        if (!hdr.content_size[i]) continue; // nothing in section
+        if (!hdr->content_size[i]) continue; // nothing in section
         // use proper names, fix TMD handling
-        snprintf(templates[n].name, 32, NAME_TAD_CONTENT, hdr.title_id, name_type[i]);
+        snprintf(templates[n].name, 32, NAME_TAD_CONTENT, hdr->title_id, name_type[i]);
         templates[n].offset = content_offset;
-        templates[n].size = hdr.content_size[i];
+        templates[n].size = hdr->content_size[i];
         templates[n].keyslot = 0xFF;
         templates[n].flags = 0;
         n++;
         if (i == 1) { // SRL content
             memcpy(templates + n, templates + n - 1, sizeof(VirtualFile));
-            snprintf(templates[n].name, 32, NAME_TAD_CONTENT, hdr.title_id, "srl");
+            snprintf(templates[n].name, 32, NAME_TAD_CONTENT, hdr->title_id, "srl");
             templates[n].flags |= (VFLAG_NDS | VFLAG_DIR);
             n++;
         }
@@ -936,51 +937,23 @@ bool ReadVGameDirLv3(VirtualFile* vfile, VirtualDir* vdir) {
     // start from parent dir object
     if (vdir->index == -1) vdir->index = 0; 
     
-    // first child dir object, skip if not available
-    if (vdir->index == 0) {
-        RomFsLv3DirMeta* parent = LV3_GET_DIR(vdir->offset, &lv3idx);
-        if (!parent) return false;
-        if (parent->offset_child != (u32) -1) {
-            vdir->offset = (u64) parent->offset_child;
-            vdir->index = 1;
-            vfile->flags |= VFLAG_DIR;
-            vfile->offset = vdir->offset;
-            return true;
-        } else vdir->index = 2;
-    }
-    
-    // parse sibling dirs
-    if (vdir->index == 1) {
-        RomFsLv3DirMeta* current = LV3_GET_DIR(vdir->offset, &lv3idx);
-        if (!current) return false;
-        if (current->offset_sibling != (u32) -1) {
-            vdir->offset = (u64) current->offset_sibling;
-            vfile->flags |= VFLAG_DIR;
-            vfile->offset = vdir->offset;
-            return true;
-        } else if (current->offset_parent != (u32) -1) {
-            vdir->offset = (u64) current->offset_parent;
-            vdir->index = 2;
-        } else return false;
-    }
-    
     // first child file object, skip if not available
-    if (vdir->index == 2) {
+    if (vdir->index == 0) {
         RomFsLv3DirMeta* parent = LV3_GET_DIR(vdir->offset, &lv3idx);
         if (!parent) return false;
         if (parent->offset_file != (u32) -1) {
             vdir->offset = (u64) parent->offset_file;
-            vdir->index = 3;
+            vdir->index = 1;
             RomFsLv3FileMeta* lv3file = LV3_GET_FILE(vdir->offset, &lv3idx);
             if (!lv3file) return false;
             vfile->offset = vdir->offset;
             vfile->size = lv3file->size_data;
             return true;
-        } else vdir->index = 4;
+        } else vdir->index = 2;
     }
     
     // parse sibling files
-    if (vdir->index == 3) {
+    if (vdir->index == 1) {
         RomFsLv3FileMeta* current = LV3_GET_FILE(vdir->offset, &lv3idx);
         if (!current) return false;
         if (current->offset_sibling != (u32) -1) {
@@ -991,7 +964,35 @@ bool ReadVGameDirLv3(VirtualFile* vfile, VirtualDir* vdir) {
             vfile->size = lv3file->size_data;
             return true;
         } else if (current->offset_parent != (u32) -1) {
-            vdir->offset = current->offset_parent;
+            vdir->offset = (u64) current->offset_parent;
+            vdir->index = 2;
+        } else return false;
+    }
+    
+    // first child dir object, skip if not available
+    if (vdir->index == 2) {
+        RomFsLv3DirMeta* parent = LV3_GET_DIR(vdir->offset, &lv3idx);
+        if (!parent) return false;
+        if (parent->offset_child != (u32) -1) {
+            vdir->offset = (u64) parent->offset_child;
+            vdir->index = 3;
+            vfile->flags |= VFLAG_DIR;
+            vfile->offset = vdir->offset;
+            return true;
+        } else vdir->index = 4;
+    }
+    
+    // parse sibling dirs
+    if (vdir->index == 3) {
+        RomFsLv3DirMeta* current = LV3_GET_DIR(vdir->offset, &lv3idx);
+        if (!current) return false;
+        if (current->offset_sibling != (u32) -1) {
+            vdir->offset = (u64) current->offset_sibling;
+            vfile->flags |= VFLAG_DIR;
+            vfile->offset = vdir->offset;
+            return true;
+        } else if (current->offset_parent != (u32) -1) {
+            vdir->offset = (u64) current->offset_parent;
             vdir->index = 4;
         } else return false;
     }
@@ -1156,6 +1157,15 @@ bool GetVGameNitroFilename(char* name, const VirtualFile* vfile, u32 n_chars) {
     memcpy(name, fnt_entry + 1, name_len);
     for (u32 i = 0; i < name_len; i++)
         if (name[i] == '%') name[i] = '_';
+    
+    // Shift-JIS workaround
+    for (u32 i = 0; i < name_len; i++) {
+        if (name[i] >= 0x80) { // this is a Shift-JIS filename
+            // the sequence below is UTF-8 for "Japanese"
+            snprintf(name, 32, "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e%08lX.sjis", (u32) (vfile->offset >> 32));
+            break;
+        }
+    }
     
     return true;
 }

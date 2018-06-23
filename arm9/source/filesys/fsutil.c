@@ -432,7 +432,8 @@ bool DirInfoWorker(char* fpath, bool virtual, u64* tsize, u32* tdirs, u32* tfile
 bool DirInfo(const char* path, u64* tsize, u32* tdirs, u32* tfiles) {
     bool virtual = (DriveType(path) & DRV_VIRTUAL);
     char fpath[256];
-    strncpy(fpath, path, 255);
+    strncpy(fpath, path, 256);
+    fpath[255] = '\0';
     *tsize = *tdirs = *tfiles = 0;
     bool res = DirInfoWorker(fpath, virtual, tsize, tdirs, tfiles);
     return res;
@@ -797,6 +798,7 @@ bool FileSelectorWorker(char* result, const char* text, const char* path, const 
     DirStruct* contents = (DirStruct*) buffer;
     char path_local[256];
     strncpy(path_local, path, 256);
+    path_local[255] = '\0';
     
     bool no_dirs = flags & NO_DIRS;
     bool no_files = flags & NO_FILES;
@@ -825,7 +827,7 @@ bool FileSelectorWorker(char* result, const char* text, const char* path, const 
                 }
                 
                 char temp_str[256];
-                snprintf(temp_str, 256, entry->name);
+                snprintf(temp_str, 256, "%s", entry->name);
                 if (hide_ext && (entry->type == T_FILE)) {
                     char* dot = strrchr(temp_str, '.');
                     if (dot) *dot = '\0';
@@ -840,7 +842,7 @@ bool FileSelectorWorker(char* result, const char* text, const char* path, const 
             
             const char* optionstr[_MAX_FS_OPT+1] = { NULL };
             for (u32 i = 0; i <= _MAX_FS_OPT; i++) optionstr[i] = opt_names[i];
-            u32 user_select = ShowSelectPrompt(n_opt, optionstr, text);
+            u32 user_select = ShowSelectPrompt(n_opt, optionstr, "%s", text);
             if (!user_select) return false;
             DirEntry* res_local = res_entry[user_select-1];
             if (res_local && (res_local->type == T_DIR)) { // selected dir

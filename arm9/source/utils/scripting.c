@@ -4,7 +4,7 @@
 #include "nand.h"
 #include "bootfirm.h"
 #include "qrcodegen.h"
-#include "firm.h"
+#include "game.h"
 #include "power.h"
 #include "unittype.h"
 #include "region.h"
@@ -12,8 +12,10 @@
 #include "sha.h"
 #include "hid.h"
 #include "ui.h"
-#include "pcx.h"
 #include "multithread.h"
+#include "png.h"
+#include "ips.h"
+#include "bps.h"
 
 
 #define _MAX_ARGS       4
@@ -59,10 +61,10 @@
 #define _FLG(c)             ((c >= 'a') ? (1 << (c - 'a')) : 0)
 
 #define IS_CTRLFLOW_CMD(id) ((id == CMD_ID_IF) || (id == CMD_ID_ELIF) || (id == CMD_ID_ELSE) || (id == CMD_ID_END) || \
-    (id == CMD_ID_GOTO) || (id == CMD_ID_LABELSEL) || \
+    (id == CMD_ID_GOTO) || (id == CMD_ID_LABELSEL) || (id == CMD_ID_KEYSEL) || \
     (id == CMD_ID_FOR) || (id == CMD_ID_NEXT))
 
-// command ids (also entry into the cmd_list aray below)
+// command ids (also entry into the cmd_list array below)
 typedef enum {
     CMD_ID_NONE = 0,
     CMD_ID_NOT,
@@ -74,6 +76,8 @@ typedef enum {
     CMD_ID_NEXT,
     CMD_ID_GOTO,
     CMD_ID_LABELSEL,
+    CMD_ID_KEYSEL,
+    CMD_ID_KEYCHK,
     CMD_ID_ECHO,
     CMD_ID_QR,
     CMD_ID_ASK,
@@ -96,6 +100,8 @@ typedef enum {
     CMD_ID_UMOUNT,
     CMD_ID_FIND,
     CMD_ID_FINDNOT,
+    CMD_ID_FGET,
+    CMD_ID_FSET,
     CMD_ID_SHA,
     CMD_ID_SHAGET,
     CMD_ID_FIXCMAC,
@@ -104,6 +110,10 @@ typedef enum {
     CMD_ID_ENCRYPT,
     CMD_ID_BUILDCIA,
     CMD_ID_EXTRCODE,
+    CMD_ID_SDUMP,
+    CMD_ID_APPLYIPS,
+    CMD_ID_APPLYBPS,
+    CMD_ID_APPLYBPM,
     CMD_ID_ISDIR,
     CMD_ID_EXIST,
     CMD_ID_BOOT,
@@ -136,6 +146,8 @@ Gm9ScriptCmd cmd_list[] = {
     { CMD_ID_NEXT    , _CMD_NEXT , 0, 0 },
     { CMD_ID_GOTO    , "goto"    , 1, 0 },
     { CMD_ID_LABELSEL, "labelsel", 2, 0 },
+    { CMD_ID_KEYSEL  , "keysel"  , 2, 0 },
+    { CMD_ID_KEYCHK  , "keychk"  , 1, 0 },
     { CMD_ID_ECHO    , "echo"    , 1, 0 },
     { CMD_ID_QR      , "qr"      , 2, 0 },
     { CMD_ID_ASK     , "ask"     , 1, 0 },
@@ -158,6 +170,8 @@ Gm9ScriptCmd cmd_list[] = {
     { CMD_ID_UMOUNT  , "imgumount",0, 0 },
     { CMD_ID_FIND    , "find"    , 2, _FLG('f') },
     { CMD_ID_FINDNOT , "findnot" , 2, 0 },
+    { CMD_ID_FGET    , "fget"    , 2, _FLG('e') },
+    { CMD_ID_FSET    , "fset"    , 2, _FLG('e') },
     { CMD_ID_SHA     , "sha"     , 2, 0 },
     { CMD_ID_SHAGET  , "shaget"  , 2, 0 },
     { CMD_ID_FIXCMAC , "fixcmac" , 1, 0 },
@@ -166,8 +180,12 @@ Gm9ScriptCmd cmd_list[] = {
     { CMD_ID_ENCRYPT , "encrypt" , 1, 0 },
     { CMD_ID_BUILDCIA, "buildcia", 1, _FLG('l') },
     { CMD_ID_EXTRCODE, "extrcode", 2, 0 },
-    { CMD_ID_ISDIR,    "isdir"   , 1, 0 },
-    { CMD_ID_EXIST,    "exist"   , 1, 0 },
+    { CMD_ID_SDUMP   , "sdump",    1, _FLG('w') },
+    { CMD_ID_APPLYIPS, "applyips", 3, 0 },
+    { CMD_ID_APPLYBPS, "applybps", 3, 0 },
+    { CMD_ID_APPLYBPM, "applybpm", 3, 0 },
+    { CMD_ID_ISDIR   , "isdir"   , 1, 0 },
+    { CMD_ID_EXIST   , "exist"   , 1, 0 },
     { CMD_ID_BOOT    , "boot"    , 1, 0 },
     { CMD_ID_SWITCHSD, "switchsd", 1, 0 },
     { CMD_ID_REBOOT  , "reboot"  , 0, 0 },
@@ -203,23 +221,30 @@ static inline bool isntrboot(void) {
     return (bootMediaStatus[3] == 2) && !bootMediaStatus[1] && !bootPartitionsStatus[0] && !bootPartitionsStatus[1];
 }
 
-static inline bool strntohex(const char* str, u8* hex, u32 len) {
+static inline u32 strntohex(const char* str, u8* hex, u32 len) {
     if (!len) {
         len = strlen(str); 
-        if (len%1) return false;
+        if (len%1) return 0;
         else len >>= 1;
     } else if (len*2 != strnlen(str, (len*2)+1)) {
-        return false;
+        return 0;
     }
     for (u32 i = 0; i < len; i++) {
         char bytestr[2+1] = { 0 };
         u32 bytehex;
         memcpy(bytestr, str + (i*2), 2);
         if (sscanf(bytestr, "%02lx", &bytehex) != 1)
-            return false;
+            return 0;
         hex[i] = (u8) bytehex;
     }
-    return true;
+    return len;
+}
+
+static inline u32 hexntostr(const u8* hex, char* str, u32 len) {
+    if (!len) return 0;
+    for (u32 i = 0; i < len; i++)
+        snprintf(str + (i<<1), 2 + 1, "%02lx", (u32) hex[i]);
+    return len;
 }
 
 static inline u32 line_len(const char* text, u32 len, u32 ww, const char* line) {
@@ -336,7 +361,9 @@ char* set_var(const char* name, const char* content) {
         if (!*(var->name) || (strncmp(var->name, name, _VAR_NAME_LEN) == 0)) break;
     if (n_var >= _VAR_MAX_BUFF) return NULL;
     strncpy(vars[n_var].name, name, _VAR_NAME_LEN);
+    vars[n_var].name[_VAR_NAME_LEN - 1] = '\0';
     strncpy(vars[n_var].content, content, _VAR_CNT_LEN);
+    vars[n_var].content[_VAR_CNT_LEN - 1] = '\0';
     if (!n_var) *(vars[n_var].content) = '\0'; // NULL var
     
     // update preview stuff
@@ -351,14 +378,14 @@ void upd_var(const char* name) {
         (strncmp(name, "REGION", _VAR_NAME_LEN) == 0)) {
         u8 secinfo_data[1 + 1 + 16] = { 0 };
         char* env_serial = (char*) secinfo_data + 2;
-        char env_region[3 + 1];
+        char env_region[3 + 1] = { 0 };
         
         snprintf(env_region, 0x4, "UNK");
         if ((FileGetData("1:/rw/sys/SecureInfo_A", secinfo_data, 0x11, 0x100) != 0x11) &&
             (FileGetData("1:/rw/sys/SecureInfo_B", secinfo_data, 0x11, 0x100) != 0x11))
             snprintf(env_serial, 0xF, "UNKNOWN");
         else if (*secinfo_data < SMDH_NUM_REGIONS)
-            strncpy(env_region, g_regionNamesShort[*secinfo_data], countof(env_region));
+            strncpy(env_region, g_regionNamesShort[*secinfo_data], countof(env_region) - 1);
         
         set_var("SERIAL", env_serial);
         set_var("REGION", env_region);
@@ -433,9 +460,10 @@ bool init_vars(const char* path_script) {
     char curr_dir[_VAR_CNT_LEN];
     if (path_script) {
         strncpy(curr_dir, path_script, _VAR_CNT_LEN);
+        curr_dir[_VAR_CNT_LEN-1] = '\0';
         char* slash = strrchr(curr_dir, '/');
         if (slash) *slash = '\0';
-    } else strncpy(curr_dir, "(null)",  _VAR_CNT_LEN);
+    } else strncpy(curr_dir, "(null)",  _VAR_CNT_LEN - 1);
     
     // set env vars
     set_var("NULL", ""); // this one is special and should not be changed later 
@@ -458,7 +486,7 @@ bool expand_arg(char* argex, const char* arg, u32 len) {
         u32 out_len = out - argex;
         if (out_len >= (_ARG_MAX_LEN-1)) return false; // maximum arglen reached
         
-        if (*in == '\\') { // escape line breaks (no other escape is handled)
+        if (*in == '\\') { // escape line breaks
             if (*(++in) == 'n') *(out++) = '\n';
             else {
                 *(out++) = '\\';
@@ -508,6 +536,7 @@ u32 get_flag(char* str, u32 len, char* err_str) {
     else if (strncmp(str, "--all", len) == 0) flag_char = 'a';
     else if (strncmp(str, "--before", len) == 0) flag_char = 'b';
     else if (strncmp(str, "--include_dirs", len) == 0) flag_char = 'd';
+    else if (strncmp(str, "--flip_endian", len) == 0) flag_char = 'e';
     else if (strncmp(str, "--first", len) == 0) flag_char = 'f';
     else if (strncmp(str, "--hash", len) == 0) flag_char = 'h';
     else if (strncmp(str, "--skip", len) == 0) flag_char = 'k';
@@ -693,8 +722,8 @@ bool for_handler(char* path, const char* dir, const char* pattern, bool recursiv
     }
     
     if (dir) { // open a dir
-        snprintf(lpattern, 64, pattern);
-        snprintf(ldir, 256, dir);
+        snprintf(lpattern, 64, "%s", pattern);
+        snprintf(ldir, 256, "%s", dir);
         if (dp) return false; // <- this should never happen
         if (fvx_opendir(&fdir[0], dir) != FR_OK)
             return false;
@@ -751,9 +780,10 @@ bool parse_line(const char* line_start, const char* line_end, cmd_id* cmdid, u32
     
     // got cmd, now parse flags & args
     while ((str = get_string(ptr, line_end, &len, &ptr, err_str))) {
-        if ((str >= line_end) || (*str == '#')) // end of line or comment
+        bool in_quotes = ((ptr - str) != (int) len); // hacky
+        if ((str >= line_end) || ((*str == '#') && !in_quotes)) // end of line or comment
             return (*cmdid = get_cmd_id(cmd, cmd_len, *flags, *argc, err_str));
-        if (*str == '-') { // flag
+        if ((*str == '-') && !in_quotes) { // flag
             u32 flag_add = get_flag(str, len, err_str);
             if (!flag_add) return false; // not a proper flag
             *flags |= flag_add;
@@ -776,7 +806,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
     // process arg0 @string
     u64 at_org = 0;
     u64 sz_org = 0;
-    if ((id == CMD_ID_SHA) || (id == CMD_ID_SHAGET) || (id == CMD_ID_INJECT) || (id == CMD_ID_FILL)) {
+    if ((id == CMD_ID_FGET) || (id == CMD_ID_FSET) || (id == CMD_ID_SHA) || (id == CMD_ID_SHAGET) || (id == CMD_ID_INJECT) || (id == CMD_ID_FILL)) {
         char* atstr_org = strrchr(argv[0], '@');
         if (atstr_org) {
             *(atstr_org++) = '\0';
@@ -894,16 +924,16 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "label not found");
         }
     }
-    else if (id == CMD_ID_LABELSEL) {
+    else if ((id == CMD_ID_LABELSEL) || (id == CMD_ID_KEYSEL)) {
         const char* options[_CHOICE_MAX_N] = { NULL };
         char* options_jmp[_CHOICE_MAX_N] = { NULL };
         char options_str[_CHOICE_MAX_N][_CHOICE_STR_LEN+1];
+        u32 options_keys[_CHOICE_MAX_N] = { 0 };
         
         char* ast = strchr(argv[1], '*');
         char* ptr = NULL;
         u32 n_opt = 0;
         while ((ptr = find_label(argv[1], ptr))) {
-            options[n_opt] = options_str[n_opt];
             options_jmp[n_opt] = ptr;
             
             while (*(ptr++) != '@');
@@ -915,44 +945,60 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
                 else if (ptr[i] == '_') choice[i] = ' ';
                 else choice[i] = ptr[i];
             }
+            if (id == CMD_ID_KEYSEL) {
+                char* keystr = choice;
+                for (; *choice != ' ' && *choice != '\0'; choice++);
+                if (*choice != '\0') *(choice++) = '\0';
+                options_keys[n_opt] = StringToButton(keystr);
+                if (!options_keys[n_opt]) continue; 
+            }
+
+            options[n_opt] = choice;
             if (++n_opt >= _CHOICE_MAX_N) break;
         }
         
-        u32 result = ShowSelectPrompt(n_opt, options, argv[0]);
+        u32 result = (id == CMD_ID_LABELSEL) ? ShowSelectPrompt(n_opt, options, "%s", argv[0]) :
+            ShowHotkeyPrompt(n_opt, options, options_keys, "%s", argv[0]);
+
         if (!result) {
             ret = false;
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "user abort");
         } else jump_ptr = options_jmp[result-1];
     }
+    else if (id == CMD_ID_KEYCHK) {
+        ret = CheckButton(StringToButton(argv[0]));
+        if (!ret && err_str) snprintf(err_str, _ERR_STR_LEN, "key not pressed");
+    }
     else if (id == CMD_ID_ECHO) {
-        ShowPrompt(false, argv[0]);
+        ShowPrompt(false, "%s", argv[0]);
     }
     else if (id == CMD_ID_QR) {
         if (!isMTmodEnabled()) { // ignore if MTmod is enabled
-            const u32 screen_size = SCREEN_SIZE(ALT_SCREEN);
-            u8* screen_copy = (u8*) malloc(screen_size);
-            u8 qrcode[qrcodegen_BUFFER_LEN_MAX];
-            u8 temp[qrcodegen_BUFFER_LEN_MAX];
-            ret = screen_copy && qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
-                qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
-            if (ret) {
-                memcpy(screen_copy, ALT_SCREEN, screen_size);
-                DrawQrCode(ALT_SCREEN, qrcode);
-                ShowPrompt(false, argv[0]);
-                memcpy(ALT_SCREEN, screen_copy, screen_size);
-            } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
-            free(screen_copy);
-        }
+			const u32 screen_size = SCREEN_SIZE(ALT_SCREEN);
+			u8* screen_copy = (u8*) malloc(screen_size);
+			u8 qrcode[qrcodegen_BUFFER_LEN_MAX];
+			u8 temp[qrcodegen_BUFFER_LEN_MAX];
+			ret = screen_copy && qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
+				qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
+			if (ret) {
+				memcpy(screen_copy, ALT_SCREEN, screen_size);
+				DrawQrCode(ALT_SCREEN, qrcode);
+				ShowPrompt(false, "%s", argv[0]);
+				memcpy(ALT_SCREEN, screen_copy, screen_size);
+			} else if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
+			free(screen_copy);
+		}
     }
     else if (id == CMD_ID_ASK) {
-        ret = ShowPrompt(true, argv[0]);
+        ret = ShowPrompt(true, "%s", argv[0]);
         if (err_str) snprintf(err_str, _ERR_STR_LEN, "user abort");
     }
     else if (id == CMD_ID_INPUT) {
         char input[_VAR_CNT_LEN] = { 0 };
         char* var = get_var(argv[1], NULL);
         strncpy(input, var, _VAR_CNT_LEN);
-        ret = ShowStringPrompt(input, _VAR_CNT_LEN, argv[0]);
+        input[_VAR_CNT_LEN - 1] = '\0';
+        ret = ShowStringPrompt(input, _VAR_CNT_LEN, "%s", argv[0]);
         if (ret) set_var(argv[1], "");
         if (err_str) snprintf(err_str, _ERR_STR_LEN, "user abort");
         if (ret) {
@@ -961,12 +1007,14 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         }
     }
     else if ((id == CMD_ID_FILESEL) || (id == CMD_ID_DIRSEL)) {
-        char choice[_VAR_CNT_LEN] = { 0 };
+        char choice[_VAR_CNT_LEN];
         char* var = get_var(argv[2], NULL);
         strncpy(choice, var, _VAR_CNT_LEN);
+        choice[_VAR_CNT_LEN - 1] = '\0';
         
         char path[_VAR_CNT_LEN];
         strncpy(path, argv[1], _VAR_CNT_LEN);
+        path[_VAR_CNT_LEN - 1] = '\0';
         if (strncmp(path, "Z:", 2) == 0) {
             ret = false;
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "forbidden drive");
@@ -998,6 +1046,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
     else if (id == CMD_ID_STRSPLIT) {
         char str[_ARG_MAX_LEN];
         strncpy(str, argv[1], _ARG_MAX_LEN);
+        str[_ARG_MAX_LEN - 1] = '\0';
         
         ret = false;
         if (strlen(argv[2]) == 1) { // argv[2] must be one char
@@ -1018,6 +1067,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
     else if (id == CMD_ID_STRREP) {
         char str[_ARG_MAX_LEN];
         strncpy(str, argv[1], _ARG_MAX_LEN);
+        str[_ARG_MAX_LEN - 1] = '\0';
         
         if (strnlen(argv[2], _ARG_MAX_LEN) != 2) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "argv[2] must be 2 chars");
@@ -1134,6 +1184,57 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "var fail");
         }
     }
+    else if (id == CMD_ID_FGET) {
+        u8 data[(_VAR_CNT_LEN-1)/2];
+        if (sz_org == 0) {
+            ret = false;
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "no size given");
+        } else if (sz_org > (_VAR_CNT_LEN-1)/2) {
+            ret = false;
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "size too big");
+        } else if (FileGetData(argv[0], data, sz_org, at_org) != sz_org) {
+            ret = false;
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "read fail");
+        } else {
+            char* var = set_var(argv[1], "");
+            if (!var) {
+                ret = false;
+                if (err_str) snprintf(err_str, _ERR_STR_LEN, "var fail");
+            } else {
+                if (flags & _FLG('e')) { // flip data
+                    for (u32 i = 0; i < (sz_org >> 1); i++) {
+                        u8 tmp = data[i];
+                        data[i] = data[sz_org - 1 - i];
+                        data[sz_org - 1 - i] = tmp;
+                    }
+                }
+                ret = hexntostr(data, var, sz_org);
+                if (!ret && err_str) snprintf(err_str, _ERR_STR_LEN, "conversion fail");
+            }
+        }
+    }
+    else if (id == CMD_ID_FSET) {
+        u8 data[(_ARG_MAX_LEN-1)/2];
+        u32 len = strntohex(argv[1], data, 0);
+        if (!sz_org) sz_org = len;
+        if ((sz_org <= len) && (flags & _FLG('e'))) { // flip data
+            for (u32 i = 0; i < (sz_org >> 1); i++) {
+                u8 tmp = data[i];
+                data[i] = data[sz_org - 1 - i];
+                data[sz_org - 1 - i] = tmp;
+            }
+        }
+        if (!len) {
+            ret = false;
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "invalid data");
+        } else if (sz_org > len) {
+            ret = false;
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "size too big");
+        } else if (!FileSetData(argv[0], data, sz_org, at_org, false)) {
+            ret = false;
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "write fail");
+        }
+    }
     else if (id == CMD_ID_SHA) {
         u8 sha256_fil[0x20];
         u8 sha256_cmp[0x20];
@@ -1200,6 +1301,45 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "extract .code failed");
         }
     }
+    else if (id == CMD_ID_SDUMP) {
+        ret = false;
+        if (err_str) snprintf(err_str, _ERR_STR_LEN, "build failed");
+        if ((strncasecmp(argv[0], TIKDB_NAME_ENC, _ARG_MAX_LEN) == 0) ||
+            (strncasecmp(argv[0], TIKDB_NAME_DEC, _ARG_MAX_LEN) == 0)) {
+            bool tik_dec = (strncasecmp(argv[0], TIKDB_NAME_DEC, _ARG_MAX_LEN) == 0);
+            if (flags & _FLG('w')) fvx_unlink(tik_dec ? OUTPUT_PATH "/" TIKDB_NAME_DEC : OUTPUT_PATH "/" TIKDB_NAME_ENC);
+            if (BuildTitleKeyInfo(NULL, tik_dec, false) == 0) {
+                ShowString("Building to " OUTPUT_PATH ":\n%s ...", argv[0]);
+                if (((BuildTitleKeyInfo("1:/dbs/ticket.db", tik_dec, false) == 0) ||
+                     (BuildTitleKeyInfo("4:/dbs/ticket.db", tik_dec, false) == 0)) &&
+                    (BuildTitleKeyInfo(NULL, tik_dec, true) == 0))
+                    ret = true;
+            }
+        } else if (strncasecmp(argv[0], SEEDDB_NAME, _ARG_MAX_LEN) == 0) {
+            if (flags & _FLG('w')) fvx_unlink(OUTPUT_PATH "/" SEEDDB_NAME);
+            if (BuildSeedInfo(NULL, false) == 0) {
+                ShowString("Building to " OUTPUT_PATH ":\n%s ...", argv[0]);
+                if (((BuildSeedInfo("1:", false) == 0) ||
+                     (BuildSeedInfo("4:", false) == 0)) &&
+                    (BuildSeedInfo(NULL, true) == 0))
+                    ret = true;
+            }
+        } else {
+            if (err_str) snprintf(err_str, _ERR_STR_LEN, "unknown file");
+        }
+    }
+    else if (id == CMD_ID_APPLYIPS) {
+        ret = (ApplyIPSPatch(argv[0], argv[1], argv[2]) == 0);
+        if (err_str) snprintf(err_str, _ERR_STR_LEN, "apply IPS failed");
+    }
+    else if (id == CMD_ID_APPLYBPS) {
+        ret = (ApplyBPSPatch(argv[0], argv[1], argv[2]) == 0);
+        if (err_str) snprintf(err_str, _ERR_STR_LEN, "apply BPS failed");
+    }
+    else if (id == CMD_ID_APPLYBPM) {
+        ret = (ApplyBPMPatch(argv[0], argv[1], argv[2]) == 0);
+        if (err_str) snprintf(err_str, _ERR_STR_LEN, "apply BPM failed");
+    }
     else if (id == CMD_ID_ISDIR) {
         DIR fdir;
         if (fvx_opendir(&fdir, argv[0]) == FR_OK) {
@@ -1231,6 +1371,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
                 if ((*argv[0] == '0') || (*argv[0] == '1'))
                     snprintf(fixpath, 256, "%s%s", (*argv[0] == '0') ? "sdmc" : "nand", argv[0] + 1);
                 else strncpy(fixpath, argv[0], 256);
+                fixpath[255] = '\0';
                 BootFirm((FirmHeader*)(void*)firm, fixpath);
                 while(1);
             } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "not a bootable firm");
@@ -1327,7 +1468,7 @@ bool run_line(const char* line_start, const char* line_end, u32* flags, char* er
     if ((cmdid == CMD_ID_IF) || (cmdid == CMD_ID_ELIF) || (cmdid == CMD_ID_NOT)) {
         // set defaults
         argc = 1;
-        strncpy(argv[0], _ARG_FALSE, _ARG_MAX_LEN);
+        strncpy(argv[0], _ARG_FALSE, _ARG_MAX_LEN - 1);
         
         // skip to behind the command
         char* line_start_next = (char*) line_start;
@@ -1336,7 +1477,7 @@ bool run_line(const char* line_start, const char* line_end, u32* flags, char* er
         
         // run condition, take over result
         if (run_line(line_start_next, line_end, flags, err_str, true))
-            strncpy(argv[0], _ARG_TRUE, _ARG_MAX_LEN);
+            strncpy(argv[0], _ARG_TRUE, _ARG_MAX_LEN - 1);
     }
     
     // run the command (if available)
@@ -1656,11 +1797,11 @@ bool ExecuteGM9Script(const char* path_script) {
     bool result = true;
     while (ptr < end) {
         u32 flags = 0;
-        
+
         // find line end
         char* line_end = strchr(ptr, '\n');
         if (!line_end) line_end = ptr + strlen(ptr);
-        
+
         // update script viewer
         if (MAIN_SCREEN != TOP_SCREEN && !isMTmodEnabled()) {
             if (preview_mode != preview_mode_local) {
@@ -1668,25 +1809,30 @@ bool ExecuteGM9Script(const char* path_script) {
                     ClearScreen(TOP_SCREEN, COLOR_STD_BG);
                 if (preview_mode > 2) {
                     char* preview_str = get_var("PREVIEW_MODE", NULL);
-                    u32 pcx_size = fvx_qsize(preview_str);
-                    u8* pcx = (u8*) malloc(SCREEN_SIZE_TOP);
-                    u8* bitmap = (u8*) malloc(SCREEN_SIZE_TOP);
-                    if (pcx && bitmap && pcx_size && (pcx_size <  SCREEN_SIZE_TOP) && 
-                        (pcx_size == FileGetData(preview_str, pcx, pcx_size, 0)) &&
-                        (PCX_Decompress(bitmap, SCREEN_SIZE_TOP, pcx, pcx_size))) {
-                        PCXHdr* hdr = (PCXHdr*) (void*) pcx;
-                        DrawBitmap(TOP_SCREEN, -1, -1, PCX_Width(hdr), PCX_Height(hdr), bitmap);
+                    u32 bitmap_width, bitmap_height;
+                    u8* bitmap = NULL;
+
+                    u8* png = (u8*) malloc(SCREEN_SIZE_TOP);
+                    if (png) {
+                        u32 png_size = FileGetData(preview_str, png, SCREEN_SIZE_TOP, 0);
+                        if (png_size && png_size < SCREEN_SIZE_TOP)
+                            bitmap = PNG_Decompress(png, png_size, &bitmap_width, &bitmap_height);
+                        free(png);
+                    }
+
+                    if (bitmap) {
+                        DrawBitmap(TOP_SCREEN, -1, -1, bitmap_width, bitmap_height, bitmap);
+                        free(bitmap);
                     } else {
                         if (strncmp(preview_str, "off", _VAR_CNT_LEN) == 0) preview_str = "(preview disabled)";
-                        DrawStringCenter(TOP_SCREEN, COLOR_STD_FONT, COLOR_STD_BG, preview_str);
+                        DrawStringCenter(TOP_SCREEN, COLOR_STD_FONT, COLOR_STD_BG, "%s", preview_str);
                     }
-                    if (pcx) free(pcx);
-                    if (bitmap) free(bitmap);
+
                     preview_mode = 0;
                 }
                 preview_mode_local = preview_mode;
             }
-            
+
             bool show_preview = preview_mode;
             if (preview_mode == 1) {
                 show_preview = false;
@@ -1748,7 +1894,7 @@ bool ExecuteGM9Script(const char* path_script) {
             if (!(flags & _FLG('s'))) { // not silent
                 if (!*err_str) {
                     char* msg_fail = get_var("ERRORMSG", NULL);
-                    if (msg_fail && *msg_fail) ShowPrompt(false, msg_fail);
+                    if (msg_fail && *msg_fail) ShowPrompt(false, "%s", msg_fail);
                     else snprintf(err_str, _ERR_STR_LEN, "error message fail");
                 }
                 if (*err_str) {
@@ -1800,7 +1946,7 @@ bool ExecuteGM9Script(const char* path_script) {
     
     if (result) { // success message if applicable
         char* msg_okay = get_var("SUCCESSMSG", NULL);
-        if (msg_okay && *msg_okay) ShowPrompt(false, msg_okay);
+        if (msg_okay && *msg_okay) ShowPrompt(false, "%s", msg_okay);
     }
     
     

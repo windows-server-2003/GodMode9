@@ -203,6 +203,7 @@ u32 LoadCdnTicketFile(Ticket* ticket, const char* path_cnt) {
     // path points to CDN content file
     char path_cetk[256];
     strncpy(path_cetk, path_cnt, 256);
+    path_cetk[255] = '\0';
     char* name_cetk = strrchr(path_cetk, '/');
     if (!name_cetk) return 1; // will not happen
     char* ext_cetk = strrchr(++name_cetk, '.');
@@ -224,6 +225,7 @@ u32 GetTmdContentPath(char* path_content, const char* path_tmd) {
     // content path string
     char* name_content;
     strncpy(path_content, path_tmd, 256);
+    path_content[255] = '\0';
     name_content = strrchr(path_content, '/');
     if (!name_content) return 1; // will not happen
     name_content++;
@@ -468,6 +470,7 @@ u32 VerifyTmdFile(const char* path, bool cdn) {
     char path_content[256];
     char* name_content;
     strncpy(path_content, path, 256);
+    path_content[255] = '\0';
     name_content = strrchr(path_content, '/');
     if (!name_content) return 1; // will not happen
     name_content++;
@@ -965,6 +968,7 @@ u32 CryptCdnFileBuffered(const char* orig, const char* dest, u16 crypto, void* b
     if (!strrchr(fname, '.')) {
         char* name_tmd;
         strncpy(path_tmd, orig, 256);
+        path_tmd[255] = '\0';
         name_tmd = strrchr(path_tmd, '/');
         if (!name_tmd) return 1; // will not happen
         name_tmd++;
@@ -1227,6 +1231,7 @@ u32 BuildCiaFromTmdFileBuffered(const char* path_tmd, const char* path_cia, bool
     char path_content[256];
     char* name_content;
     strncpy(path_content, path_tmd, 256);
+    path_content[255] = '\0';
     name_content = strrchr(path_content, '/');
     if (!name_content) return 1; // will not happen
     name_content++;
@@ -1312,7 +1317,7 @@ u32 BuildCiaFromNcchFile(const char* path_ncch, const char* path_cia) {
     
     // load NCCH header / extheader, get save size && title id
     if (LoadNcchHeaders(&ncch, &exthdr, NULL, path_ncch, 0) == 0) {
-        save_size = getle32(exthdr.sys_info);
+        save_size = (u32) exthdr.savedata_size;
         has_exthdr = true;
     } else if (LoadNcchHeaders(&ncch, NULL, NULL, path_ncch, 0) != 0) {
         return 1;
@@ -1384,7 +1389,7 @@ u32 BuildCiaFromNcsdFile(const char* path_ncsd, const char* path_cia) {
     // load first content NCCH / extheader
     if (LoadNcchHeaders(&ncch, &exthdr, NULL, path_ncsd, NCSD_CNT0_OFFSET) != 0)
         return 1;
-    save_size = getle32(exthdr.sys_info);
+    save_size = (u32) exthdr.savedata_size;
     
     // build the CIA stub
     CiaStub* cia = (CiaStub*) malloc(sizeof(CiaStub));
@@ -1513,16 +1518,27 @@ u32 DumpCxiSrlFromTmdFile(const char* path) {
 }
 
 u32 ExtractCodeFromCxiFile(const char* path, const char* path_out, char* extstr) {
+    u64 filetype = IdentifyFileType(path);
     char dest[256];
     if (!path_out && (fvx_rmkdir(OUTPUT_PATH) != FR_OK)) return 1;
     strncpy(dest, path_out ? path_out : OUTPUT_PATH, 256);
+    dest[255] = '\0';
     if (!CheckWritePermissions(dest)) return 1;
     
+    // NCSD handling
+    u32 ncch_offset = 0;
+    if (filetype & GAME_NCSD) {
+        NcsdHeader ncsd;
+        if (LoadNcsdHeader(&ncsd, path) == 0)
+            ncch_offset = ncsd.partitions[0].offset * NCSD_MEDIA_UNIT;
+        else return 1;
+    }
+
     // load all required headers
     NcchHeader ncch;
     NcchExtHeader exthdr;
     ExeFsHeader exefs;
-    if (LoadNcchHeaders(&ncch, &exthdr, &exefs, path, 0) != 0) return 1;
+    if (LoadNcchHeaders(&ncch, &exthdr, &exefs, path, ncch_offset) != 0) return 1;
     
     // find ".code" or ".firm" inside the ExeFS header
     u32 code_size = 0;
@@ -1541,7 +1557,7 @@ u32 ExtractCodeFromCxiFile(const char* path, const char* path_out, char* extstr)
     if (exthdr.flag & 0x1) {
         u8 footer[8];
         if (code_size < 8) return 1;
-        if ((fvx_qread(path, footer, code_offset + code_size - 8, 8, NULL) != FR_OK) ||
+        if ((fvx_qread(path, footer, ncch_offset + code_offset + code_size - 8, 8, NULL) != FR_OK) ||
             (DecryptNcch(footer, code_offset + code_size - 8, 8, &ncch, &exefs) != 0))
             return 1;
         u32 unc_size = GetCodeLzssUncompressedSize(footer, code_size);
@@ -1556,7 +1572,7 @@ u32 ExtractCodeFromCxiFile(const char* path, const char* path_out, char* extstr)
     }
     
     // load .code
-    if ((fvx_qread(path, code, code_offset, code_size, NULL) != FR_OK) ||
+    if ((fvx_qread(path, code, ncch_offset + code_offset, code_size, NULL) != FR_OK) ||
         (DecryptNcch(code, code_offset, code_size, &ncch, &exefs) != 0)) {
         free(code);
         return 1;
@@ -1686,9 +1702,9 @@ u32 ShowSmdhTitleInfo(Smdh* smdh) {
     const u8 smdh_magic[] = { SMDH_MAGIC };
     const u32 lwrap = 24;
     u8 icon[SMDH_SIZE_ICON_BIG];
-    char desc_l[SMDH_SIZE_DESC_LONG];
-    char desc_s[SMDH_SIZE_DESC_SHORT];
-    char pub[SMDH_SIZE_PUBLISHER];
+    char desc_l[SMDH_SIZE_DESC_LONG+1];
+    char desc_s[SMDH_SIZE_DESC_SHORT+1];
+    char pub[SMDH_SIZE_PUBLISHER+1];
     if ((memcmp(smdh->magic, smdh_magic, 4) != 0) ||
         (GetSmdhIconBig(icon, smdh) != 0) ||
         (GetSmdhDescLong(desc_l, smdh) != 0) ||
@@ -1707,7 +1723,7 @@ u32 ShowSmdhTitleInfo(Smdh* smdh) {
 u32 ShowTwlIconTitleInfo(TwlIconData* twl_icon) {
     const u32 lwrap = 24;
     u8 icon[TWLICON_SIZE_ICON];
-    char desc[TWLICON_SIZE_DESC];
+    char desc[TWLICON_SIZE_DESC+1];
     if ((GetTwlIcon(icon, twl_icon) != 0) ||
         (GetTwlTitle(desc, twl_icon) != 0))
         return 1;
@@ -1862,6 +1878,7 @@ u32 CheckHealthAndSafetyInject(const char* hsdrv) {
 
 u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
     NcchHeader ncch;
+    NcchExtHeader exthdr;
         
     // write permissions
     if (!CheckWritePermissions(destdrv))
@@ -1885,12 +1902,12 @@ u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
     }
     
     // check input file / crypto
-    if ((LoadNcchHeaders(&ncch, NULL, NULL, path, 0) != 0) ||
+    if ((LoadNcchHeaders(&ncch, &exthdr, NULL, path, 0) != 0) ||
         !(NCCH_IS_CXI(&ncch)) || (SetupNcchCrypto(&ncch, NCCH_NOCRYPTO) != 0))
         return 1;
     
     // check crypto, get sig
-    if ((LoadNcchHeaders(&ncch, NULL, NULL, path_cxi, 0) != 0) ||
+    if ((LoadNcchHeaders(&ncch, &exthdr, NULL, path_cxi, 0) != 0) ||
         (SetupNcchCrypto(&ncch, NCCH_NOCRYPTO) != 0) || !(NCCH_IS_CXI(&ncch)))
         return 1;
     u8 sig[0x100];
@@ -1910,14 +1927,19 @@ u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
     if (CryptNcchNcsdBossFirmFile(path, path_cxi, GAME_NCCH, CRYPTO_DECRYPT, 0, 0, NULL, NULL) != 0)
         ret = 1;
     
-    // fix up the injected H&S NCCH header (copy H&S signature, title ID) 
-    if ((ret == 0) && (LoadNcchHeaders(&ncch, NULL, NULL, path_cxi, 0) == 0)) {
-        UINT bw;
+    // fix up the injected H&S NCCH header / extheader (copy H&S signature, title ID to multiple locations)
+    // also set savedata size to zero (thanks @TurdPooCharger)
+    if ((ret == 0) && (LoadNcchHeaders(&ncch, &exthdr, NULL, path_cxi, 0) == 0)) {
         ncch.programId = tid_hs;
         ncch.partitionId = tid_hs;
+        exthdr.jump_id = tid_hs;
+        exthdr.aci_title_id = tid_hs;
+        exthdr.aci_limit_title_id = tid_hs;
+        exthdr.savedata_size = 0;
         memcpy(ncch.signature, sig, 0x100);
-        if ((fvx_qwrite(path_cxi, &ncch, 0, sizeof(NcchHeader), &bw) != FR_OK) ||
-            (bw != sizeof(NcchHeader)))
+        sha_quick(ncch.hash_exthdr, &exthdr, 0x400, SHA256_MODE);
+        if ((fvx_qwrite(path_cxi, &ncch, 0, sizeof(NcchHeader), NULL) != FR_OK) ||
+            (fvx_qwrite(path_cxi, &exthdr, NCCH_EXTHDR_OFFSET, sizeof(NcchExtHeader), NULL) != FR_OK))
             ret = 1;
     } else ret = 1;
     
@@ -2106,17 +2128,19 @@ u32 BuildSeedInfo(const char* path, bool dump) {
     
     if (dump) {
         u32 dump_size = SEEDDB_SIZE(seed_info);
+        u32 ret = 0;
         
         if (dump_size > 16) {
             if (fvx_rmkdir(OUTPUT_PATH) != FR_OK) // ensure the output dir exists
-                return 1;
+                ret = 1;
             f_unlink(path_out);
             if (fvx_qwrite(path_out, seed_info, 0, dump_size, NULL) != FR_OK)
-                return 1;
-        }
+                ret = 1;
+        } else ret = 1;
         
         free(seed_info);
         seed_info = NULL;
+        return ret;
     }
     
     return 0;

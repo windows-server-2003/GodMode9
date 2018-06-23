@@ -13,7 +13,7 @@
 #include "unittype.h"
 #include "entrypoints.h"
 #include "bootfirm.h"
-#include "pcx.h"
+#include "png.h"
 #include "timer.h"
 #include "rtc.h"
 #include "power.h"
@@ -48,24 +48,26 @@ typedef struct {
 
 u32 SplashInit(const char* modestr) {
     u64 splash_size;
-    u8* splash = FindVTarFileInfo(VRAM0_SPLASH_PCX, &splash_size);
-    u8* bitmap = (u8*) malloc(SCREEN_SIZE_TOP);
+    u32 splash_width, splash_height;
+    u8* splash = FindVTarFileInfo(VRAM0_SPLASH_PNG, &splash_size);
+    u8* bitmap = NULL;
     const char* namestr = FLAVOR " " VERSION;
     const char* loadstr = "booting...";
     const u32 pos_xb = 10;
     const u32 pos_yb = 10;
     const u32 pos_xu = SCREEN_WIDTH_BOT - 10 - GetDrawStringWidth(loadstr);
     const u32 pos_yu = SCREEN_HEIGHT - 10 - GetDrawStringHeight(loadstr);
-    
+
     ClearScreenF(true, true, COLOR_STD_BG);
-    
-    if (splash && bitmap && PCX_Decompress(bitmap, SCREEN_SIZE_TOP, splash, splash_size)) {
-        PCXHdr* hdr = (PCXHdr*) (void*) splash;
-        DrawBitmap(TOP_SCREEN, -1, -1, PCX_Width(hdr), PCX_Height(hdr), bitmap);
-    } else DrawStringF(TOP_SCREEN, 10, 10, COLOR_STD_FONT, COLOR_TRANSPARENT, "(" VRAM0_SPLASH_PCX " not found)");
+
+    if (splash) {
+        bitmap = PNG_Decompress(splash, splash_size, &splash_width, &splash_height);
+        if (bitmap) DrawBitmap(TOP_SCREEN, -1, -1, splash_width, splash_height, bitmap);
+    } else DrawStringF(TOP_SCREEN, 10, 10, COLOR_STD_FONT, COLOR_TRANSPARENT, "(" VRAM0_SPLASH_PNG " not found)");
+
     if (modestr) DrawStringF(TOP_SCREEN, SCREEN_WIDTH_TOP - 10 - GetDrawStringWidth(modestr),
         SCREEN_HEIGHT - 10 - GetDrawStringHeight(modestr), COLOR_STD_FONT, COLOR_TRANSPARENT, modestr);
-    
+
     DrawStringF(BOT_SCREEN, pos_xb, pos_yb, COLOR_STD_FONT, COLOR_STD_BG, "%s\n%*.*s\n%s\n \n \n%s\n%s\n \n%s\n%s",
         namestr, strnlen(namestr, 64), strnlen(namestr, 64),
         "------------------------------", "https://github.com/d0k3/GodMode9",
@@ -73,7 +75,7 @@ u32 SplashInit(const char* modestr) {
         "Hourlies:", "https://d0k3.secretalgorithm.com/");
     DrawStringF(BOT_SCREEN, pos_xu, pos_yu, COLOR_STD_FONT, COLOR_STD_BG, loadstr);
     DrawStringF(BOT_SCREEN, pos_xb, pos_yu, COLOR_STD_FONT, COLOR_STD_BG, "built: " DBUILTL);
-    
+
     if (bitmap) free(bitmap);
     return 0;
 }
@@ -160,9 +162,9 @@ void DrawTopBar(const char* curr_path) {
     
     // top bar - current path
     DrawRectangle(TOP_SCREEN, 0, 0, SCREEN_WIDTH_TOP, 12, COLOR_TOP_BAR);
-    if (*curr_path) TruncateString(tempstr, curr_path, len_path / FONT_WIDTH_EXT, 8);
+    if (*curr_path) TruncateString(tempstr, curr_path, min(63, len_path / FONT_WIDTH_EXT), 8);
     else snprintf(tempstr, 16, "[root]");
-    DrawStringF(TOP_SCREEN, bartxt_x, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, tempstr);
+    DrawStringF(TOP_SCREEN, bartxt_x, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, "%s", tempstr);
     bool show_time = true;
     
     #ifdef SHOW_FREE
@@ -177,9 +179,7 @@ void DrawTopBar(const char* curr_path) {
         DrawStringF(TOP_SCREEN, bartxt_rx, bartxt_start, COLOR_STD_BG, COLOR_TOP_BAR, "%19.19s", tempstr);
         show_time = false;
     }
-    #endif
-    
-    #ifdef MONITOR_HEAP
+    #elif defined MONITOR_HEAP
     if (true) { // allocated mem
         const u32 bartxt_rx = SCREEN_WIDTH_TOP - (9*FONT_WIDTH_EXT) - bartxt_x;
         char bytestr[32];
@@ -211,6 +211,7 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
     const u32 info_start = (MAIN_SCREEN == TOP_SCREEN) ? 18 : 2; // leave space for the topbar when required
     const u32 instr_x = (SCREEN_WIDTH_MAIN - (34*FONT_WIDTH_EXT)) / 2;
     const u32 len_info = (SCREEN_WIDTH_MAIN - ((SCREEN_WIDTH_MAIN >= 400) ? 80 : 20)) / 2;
+    const u32 str_len_info = min(63, len_info / FONT_WIDTH_EXT);
     char tempstr[64];
     
     static u32 state_prev = 0xFFFFFFFF;
@@ -232,12 +233,12 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
     else snprintf(tempstr, 63, "CURRENT");
     DrawStringF(MAIN_SCREEN, 2, info_start, COLOR_STD_FONT, COLOR_STD_BG, "[%s]", tempstr);
     // file / entry name
-    ResizeString(tempstr, curr_entry->name, len_info / FONT_WIDTH_EXT, 8, false);
+    ResizeString(tempstr, curr_entry->name, str_len_info, 8, false);
     u32 color_current = COLOR_ENTRY(curr_entry);
     DrawStringF(MAIN_SCREEN, 4, info_start + 12, color_current, COLOR_STD_BG, "%s", tempstr);
     // size (in Byte) or type desc
     if (curr_entry->type == T_DIR) {
-        ResizeString(tempstr, "(dir)", len_info / FONT_WIDTH_EXT, 8, false);
+        ResizeString(tempstr, "(dir)", str_len_info, 8, false);
     } else if (curr_entry->type == T_DOTDOT) {
         snprintf(tempstr, 21, "%20s", "");
     } else if (curr_entry->type == T_ROOT) {
@@ -249,13 +250,13 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
             (drvtype & DRV_XORPAD) ? "XORpad" : (drvtype & DRV_MEMORY) ? "Memory" : (drvtype & DRV_ALIAS) ? "Alias" :
             (drvtype & DRV_CART) ? "Gamecart" : (drvtype & DRV_VRAM) ? "VRAM" : (drvtype & DRV_SEARCH) ? "Search" : ""),
             ((drvtype & DRV_FAT) ? " FAT" : (drvtype & DRV_VIRTUAL) ? " Virtual" : ""));
-        ResizeString(tempstr, drvstr, len_info / FONT_WIDTH_EXT, 8, false);
+        ResizeString(tempstr, drvstr, str_len_info, 8, false);
     } else {
         char numstr[32];
         char bytestr[32];
         FormatNumber(numstr, curr_entry->size);
         snprintf(bytestr, 31, "%s Byte", numstr);
-        ResizeString(tempstr, bytestr, len_info / FONT_WIDTH_EXT, 8, false);
+        ResizeString(tempstr, bytestr, str_len_info, 8, false);
     }
     DrawStringF(MAIN_SCREEN, 4, info_start + 12 + 10, color_current, COLOR_STD_BG, tempstr);
     // path of file (if in search results)
@@ -263,11 +264,11 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         char dirstr[256];
         strncpy(dirstr, curr_entry->path, 256);
         *(strrchr(dirstr, '/')+1) = '\0';
-        ResizeString(tempstr, dirstr, len_info / FONT_WIDTH_EXT, 8, false);
-        DrawStringF(MAIN_SCREEN, 4, info_start + 12 + 10 + 10, color_current, COLOR_STD_BG, tempstr);
+        ResizeString(tempstr, dirstr, str_len_info, 8, false);
+        DrawStringF(MAIN_SCREEN, 4, info_start + 12 + 10 + 10, color_current, COLOR_STD_BG, "%s", tempstr);
     } else {
-        ResizeString(tempstr, "", len_info / FONT_WIDTH_EXT, 8, false);
-        DrawStringF(MAIN_SCREEN, 4, info_start + 12 + 10 + 10, color_current, COLOR_STD_BG, tempstr);
+        ResizeString(tempstr, "", str_len_info, 8, false);
+        DrawStringF(MAIN_SCREEN, 4, info_start + 12 + 10 + 10, color_current, COLOR_STD_BG, "%s", tempstr);
     }
     
     // right top - clipboard
@@ -275,15 +276,15 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         len_info / FONT_WIDTH_EXT, (clipboard->n_entries) ? "[CLIPBOARD]" : "");
     for (u32 c = 0; c < n_cb_show; c++) {
         u32 color_cb = COLOR_ENTRY(&(clipboard->entry[c]));
-        ResizeString(tempstr, (clipboard->n_entries > c) ? clipboard->entry[c].name : "", len_info / FONT_WIDTH_EXT, 8, true);
-        DrawStringF(MAIN_SCREEN, SCREEN_WIDTH_MAIN - len_info - 4, info_start + 12 + (c*10), color_cb, COLOR_STD_BG, tempstr);
+        ResizeString(tempstr, (clipboard->n_entries > c) ? clipboard->entry[c].name : "", str_len_info, 8, true);
+        DrawStringF(MAIN_SCREEN, SCREEN_WIDTH_MAIN - len_info - 4, info_start + 12 + (c*10), color_cb, COLOR_STD_BG, "%s", tempstr);
     }
     *tempstr = '\0';
     if (clipboard->n_entries > n_cb_show) snprintf(tempstr, 60, "+ %lu more", clipboard->n_entries - n_cb_show);
     DrawStringF(MAIN_SCREEN, SCREEN_WIDTH_MAIN - len_info - 4, info_start + 12 + (n_cb_show*10), COLOR_DARKGREY, COLOR_STD_BG,
         "%*s", len_info / FONT_WIDTH_EXT, tempstr);
     
-    // bottom: inctruction block (only show if MTmod is disabled)
+    // bottom: instruction block (only show if MTmod is disabled)
     char instr[512];
     snprintf(instr, 512, "%s\n%s%s%s%s%s%s%s%s",
         FLAVOR " " VERSION, // generic start part
@@ -327,7 +328,7 @@ void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
             snprintf(tempstr, str_width + 1, "%s%10.10s", namestr,
                 (curr_entry->type == T_DIR) ? "(dir)" : (curr_entry->type == T_DOTDOT) ? "(..)" : bytestr);
         } else snprintf(tempstr, str_width + 1, "%-*.*s", str_width, str_width, "");
-        DrawStringF(ALT_SCREEN, pos_x, pos_y, color_font, COLOR_STD_BG, tempstr);
+        DrawStringF(ALT_SCREEN, pos_x, pos_y, color_font, COLOR_STD_BG, "%s", tempstr);
         pos_y += stp_y;
     }
     
@@ -345,13 +346,16 @@ void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
     } else DrawRectangle(ALT_SCREEN, SCREEN_WIDTH_ALT - bar_width, start_y, bar_width, flist_height, COLOR_STD_BG);
 }
 
-u32 SdFormatMenu(void) {
+u32 SdFormatMenu(const char* slabel) {
     const u32 cluster_size_table[5] = { 0x0, 0x0, 0x4000, 0x8000, 0x10000 };
-    const char* option_emunand_size[6] = { "No EmuNAND", "RedNAND size (min)", "EmuNAND size (full)", "User input..." };
+    const char* option_emunand_size[7] = { "No EmuNAND", "RedNAND size (min)", "GW EmuNAND size (full)",
+        "MultiNAND size (2x)", "MultiNAND size (3x)", "MultiNAND size (4x)", "User input..." };
     const char* option_cluster_size[4] = { "Auto", "16KB Clusters", "32KB Clusters", "64KB Clusters" };
+    u32 sysnand_min_size_sectors = GetNandMinSizeSectors(NAND_SYSNAND);
+    u64 sysnand_min_size_mb = ((sysnand_min_size_sectors * 0x200) + 0xFFFFF) / 0x100000;
+    u64 sysnand_multi_size_mb = (align(sysnand_min_size_sectors + 1, 0x2000) * 0x200) / 0x100000;
     u64 sysnand_size_mb = (((u64)GetNandSizeSectors(NAND_SYSNAND) * 0x200) + 0xFFFFF) / 0x100000;
-    u64 sysnand_min_size_mb = (((u64)GetNandMinSizeSectors(NAND_SYSNAND) * 0x200) + 0xFFFFF) / 0x100000;
-    char label[16] = "0:GM9SD";
+    char label[16];
     u32 cluster_size = 0;
     u64 sdcard_size_mb = 0;
     u64 emunand_size_mb = (u64) -1;
@@ -364,10 +368,13 @@ u32 SdFormatMenu(void) {
         return 1;
     }
     
-    user_select = ShowSelectPrompt(4, option_emunand_size, "Format SD card (%lluMB)?\nChoose EmuNAND size:", sdcard_size_mb);
+    user_select = ShowSelectPrompt(7, option_emunand_size, "Format SD card (%lluMB)?\nChoose EmuNAND size:", sdcard_size_mb);
     if (user_select && (user_select < 4)) {
         emunand_size_mb = (user_select == 2) ? sysnand_min_size_mb : (user_select == 3) ? sysnand_size_mb : 0;
-    } else if (user_select == 4) do {
+    } else if ((user_select >= 4) && (user_select <= 6)) {
+        u32 n = (user_select - 2);
+        emunand_size_mb = n * sysnand_multi_size_mb;
+    } else if (user_select == 7) do {
         emunand_size_mb = ShowNumberPrompt(sysnand_min_size_mb, "SD card size is %lluMB.\nEnter EmuNAND size (MB) below:", sdcard_size_mb);
         if (emunand_size_mb == (u64) -1) break;
     } while (emunand_size_mb > sdcard_size_mb);
@@ -377,6 +384,7 @@ u32 SdFormatMenu(void) {
     if (!user_select) return 1;
     else cluster_size = cluster_size_table[user_select];
     
+    snprintf(label, 16, "0:%s", (slabel && *slabel) ? slabel : "GM9SD");
     if (!ShowStringPrompt(label + 2, 11 + 1, "Format SD card (%lluMB)?\nEnter label:", sdcard_size_mb))
         return 1;
     
@@ -386,20 +394,35 @@ u32 SdFormatMenu(void) {
     }
     
     if (emunand_size_mb >= sysnand_min_size_mb) {
-        const char* option_emunand_type[3] = { "RedNAND type", "GW EmuNAND type", "Don't set up" };
-        if (emunand_size_mb >= sysnand_size_mb)
+        u32 emunand_offset = 0;
+        u32 n_emunands = 1;
+        if (emunand_size_mb >= 2 * sysnand_size_mb) {
+            const char* option_emunand_type[4] = { "RedNAND type (multi)", "RedNAND type (single)", "GW EmuNAND type", "Don't set up" };
+            user_select = ShowSelectPrompt(4, option_emunand_type, "Choose EmuNAND type to set up:");
+            if (user_select > 3) return 0;
+            emunand_offset = (user_select == 2) ? 0 : 1;
+            if (user_select == 1) n_emunands = 4;
+        } else if (emunand_size_mb >= sysnand_size_mb) {
+            const char* option_emunand_type[3] = { "RedNAND type", "GW EmuNAND type", "Don't set up" };
             user_select = ShowSelectPrompt(3, option_emunand_type, "Choose EmuNAND type to set up:");
-        else user_select = ShowPrompt(true, "Clone SysNAND to RedNAND now?") ? 1 : 0;
-        if (!user_select || (user_select > 2)) return 0;
+            if (user_select > 2) return 0;
+            emunand_offset = (user_select == 1) ? 0 : 1; // 0 -> GW EmuNAND
+        } else user_select = ShowPrompt(true, "Clone SysNAND to RedNAND?") ? 1 : 0;
+        if (!user_select) return 0;
         
         u8 ncsd[0x200];
         u32 flags = OVERRIDE_PERM;
         InitSDCardFS(); // this has to be initialized for EmuNAND to work
-        SetEmuNandBase((user_select == 2) ? 0 : 1); // 0 -> GW EmuNAND
-        if ((ReadNandSectors(ncsd, 0, 1, 0xFF, NAND_SYSNAND) != 0) ||
-            (WriteNandSectors(ncsd, 0, 1, 0xFF, NAND_EMUNAND) != 0) ||
-            (!PathCopy("E:", "S:/nand_minsize.bin", &flags)))
-            ShowPrompt(false, "Cloning SysNAND to EmuNAND: failed!");
+        for (u32 i = 0; i < n_emunands; i++) {
+            if ((i * sysnand_multi_size_mb) + sysnand_min_size_mb > emunand_size_mb) break;
+            SetEmuNandBase((i * sysnand_multi_size_mb * 0x100000 / 0x200) + emunand_offset); 
+            if ((ReadNandSectors(ncsd, 0, 1, 0xFF, NAND_SYSNAND) != 0) ||
+                (WriteNandSectors(ncsd, 0, 1, 0xFF, NAND_EMUNAND) != 0) ||
+                (!PathCopy("E:", "S:/nand_minsize.bin", &flags))) {
+                ShowPrompt(false, "Cloning SysNAND to EmuNAND: failed!");
+                break;
+            }
+        }
         DeinitSDCardFS();
     }
     
@@ -409,40 +432,33 @@ u32 SdFormatMenu(void) {
 u32 FileGraphicsViewer(const char* path) {
     const u32 max_size = SCREEN_SIZE(ALT_SCREEN);
     u64 filetype = IdentifyFileType(path);
-    u8* bitmap = (u8*) malloc(max_size);
-    u8* input = (u8*) malloc(max_size);
+    u8* bitmap = NULL;
+    u8* input = (u8*)malloc(max_size);
     u32 w = 0;
     u32 h = 0;
     u32 ret = 1;
-    
-    if (!bitmap || !input) {
-        if (bitmap) free(bitmap);
-        if (input) free(input);
-        return 1;
-    }
-    
+
+    if (!input)
+        return ret;
+
     u32 input_size = FileGetData(path, input, max_size, 0);
     if (input_size && (input_size < max_size)) {
-        if (filetype & GFX_PCX) {
-            if (PCX_Decompress(bitmap, max_size, input, input_size)) {
-                PCXHdr* hdr = (PCXHdr*) (void*) input;
-                w = PCX_Width(hdr);
-                h = PCX_Height(hdr);
-                ret = 0;
-            }
+        if (filetype & GFX_PNG) {
+            bitmap = PNG_Decompress(input, input_size, &w, &h);
+            if (bitmap != NULL) ret = 0;
         }
     }
-    
-    if ((ret == 0) && w && h && (w < SCREEN_WIDTH(ALT_SCREEN)) && (h < SCREEN_HEIGHT)) {
+
+    if ((ret == 0) && w && h && (w <= SCREEN_WIDTH(ALT_SCREEN)) && (h <= SCREEN_HEIGHT)) {
         ClearScreenF(true, true, COLOR_STD_BG);
         DrawBitmap(ALT_SCREEN, -1, -1, w, h, bitmap);
         ShowString("Press <A> to continue");
         while(!(InputWait(0) & (BUTTON_A | BUTTON_B)));
         ClearScreenF(true, true, COLOR_STD_BG);
     } else ret = 1;
-    
-    free(bitmap);
-    free(input);
+
+    if (bitmap) free(bitmap);
+    if (input) free(input);
     return ret;
 }
 
@@ -900,6 +916,7 @@ u32 BootFirmHandler(const char* bootpath, bool verbose, bool delete) {
     if ((*bootpath == '0') || (*bootpath == '1'))
         snprintf(fixpath, 256, "%s%s", (*bootpath == '0') ? "sdmc" : "nand", bootpath + 1);
     else strncpy(fixpath, bootpath, 256);
+    fixpath[255] = '\0';
     
     // boot the FIRM (if we got a proper fixpath)
     if (*fixpath) {
@@ -922,7 +939,7 @@ u32 FileAttrMenu(const char* file_path) {
         return 1;
     }
 
-    char namestr[32];
+    char namestr[32 + 1];
     char sizestr[32];
     TruncateString(namestr, fno.fname, 32, 8);
     FormatNumber(sizestr, fno.fsize);
@@ -1004,9 +1021,9 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     // special stuff, only available for known filetypes (see int special below)
     bool mountable = (FTYPE_MOUNTABLE(filetype) && !(drvtype & DRV_IMAGE) &&
         !((drvtype & (DRV_SYSNAND|DRV_EMUNAND)) && (drvtype & DRV_VIRTUAL) && (filetype & IMG_FAT)));
-    bool verificable = (FYTPE_VERIFICABLE(filetype));
-    bool decryptable = (FYTPE_DECRYPTABLE(filetype));
-    bool encryptable = (FYTPE_ENCRYPTABLE(filetype));
+    bool verificable = (FTYPE_VERIFICABLE(filetype));
+    bool decryptable = (FTYPE_DECRYPTABLE(filetype));
+    bool encryptable = (FTYPE_ENCRYPTABLE(filetype));
     bool cryptable_inplace = ((encryptable||decryptable) && !in_output_path && (drvtype & DRV_FAT));
     bool cia_buildable = (FTYPE_CIABUILD(filetype));
     bool cia_buildable_legit = (FTYPE_CIABUILD_L(filetype));
@@ -1030,8 +1047,8 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     bool viewable = (FTYPE_GFX(filetype));
     bool bootable = (FTYPE_BOOTABLE(filetype));
     bool installable = (FTYPE_INSTALLABLE(filetype));
-    bool agbexportable = (FTPYE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
-    bool agbimportable = (FTPYE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
+    bool agbexportable = (FTYPE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
+    bool agbimportable = (FTYPE_AGBSAVE(filetype) && (drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
     
     char cxi_path[256] = { 0 }; // special options for TMD
     if ((filetype & GAME_TMD) && !(filetype & FLAG_NUSCDN) &&
@@ -1094,7 +1111,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         (filetype & BIN_NCCHNFO)? "NCCHinfo options..."   :
         (filetype & TXT_SCRIPT) ? "Execute GM9 script"    :
         (filetype & FONT_PBM)   ? "Set as active font"    :
-        (filetype & GFX_PCX)    ? "View PCX bitmap file"  :
+        (filetype & GFX_PNG)    ? "View PNG file"         :
         (filetype & HDR_NAND)   ? "Rebuild NCSD header"   :
         (filetype & NOIMG_NAND) ? "Rebuild NCSD header" : "???";
     optionstr[hexviewer-1] = "Show in Hexeditor";
@@ -1272,7 +1289,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     if (install > 0) optionstr[install-1] = "Install FIRM";
     if (boot > 0) optionstr[boot-1] = "Boot FIRM";
     if (script > 0) optionstr[script-1] = "Execute GM9 script";
-    if (view > 0) optionstr[font-1] = "View PCX bitmap file";
+    if (view > 0) optionstr[view-1] = "View PNG file";
     if (font > 0) optionstr[font-1] = "Set as active font";
     if (agbexport > 0) optionstr[agbexport-1] = "Dump GBA VC save";
     if (agbimport > 0) optionstr[agbimport-1] = "Inject GBA VC save";
@@ -1560,7 +1577,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
             }
             ShowPrompt(false, "%lu/%lu renamed ok", n_success, n_marked);
         } else if (!GoodRenamer(&(current_dir->entry[*cursor]), true)) {
-            ShowPrompt(false, "%s\nCould not rename\n(Maybe try decrypt?)", pathstr);
+            ShowPrompt(false, "%s\nCould not rename to good name", pathstr);
         }
         return 0;
     }
@@ -1580,7 +1597,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
             optionstr[n_opt] = "EmuNAND H&S inject";
             destdrv[n_opt++] = "4:";
         }
-        user_select = (n_opt > 1) ? (int) ShowSelectPrompt(n_opt, optionstr, pathstr) : n_opt;
+        user_select = (n_opt > 1) ? (int) ShowSelectPrompt(n_opt, optionstr, "%s", pathstr) : n_opt;
         if (user_select) {
             ShowPrompt(false, "%s\nH&S inject %s", pathstr,
                 (InjectHealthAndSafety(file_path, destdrv[user_select-1]) == 0) ? "success" : "failed");
@@ -1646,7 +1663,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
             destdrv[n_opt++] = "4:";
         }
         if (n_opt) {
-            user_select = (n_opt > 1) ? (int) ShowSelectPrompt(n_opt, optionstr, pathstr) : 1;
+            user_select = (n_opt > 1) ? (int) ShowSelectPrompt(n_opt, optionstr, "%s", pathstr) : 1;
             if (user_select) {
                 ShowPrompt(false, "%s\nCTRNAND transfer %s", pathstr,
                     (TransferCtrNandImage(file_path, destdrv[user_select-1]) == 0) ? "success" : "failed");
@@ -1737,7 +1754,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     }
     else if (user_select == view) { // view gfx
         if (FileGraphicsViewer(file_path) != 0)
-            ShowPrompt(false, "%s\nError: Cannot view file");
+            ShowPrompt(false, "%s\nError: Cannot view file\n(Hint: maybe it's too big)", pathstr);
         return 0;
     }
     else if (user_select == agbexport) { // export GBA VC save
@@ -1796,11 +1813,13 @@ u32 HomeMoreMenu(char* current_path) {
                     return GODMODE_NO_EXIT;
         }
         bool sd_state = CheckSDMountState();
+        char slabel[16] = { '\0' };
         if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE)))
             clipboard->n_entries = 0; // remove SD clipboard entries
+        GetFATVolumeLabel("0:", slabel); // get SD volume label
         DeinitExtFS();
         DeinitSDCardFS();
-        if ((SdFormatMenu() == 0) || sd_state) {;
+        if ((SdFormatMenu(slabel) == 0) || sd_state) {;
             while (!InitSDCardFS() &&
                 ShowPrompt(true, "Initializing SD card failed! Retry?"));
         }
@@ -1846,7 +1865,7 @@ u32 HomeMoreMenu(char* current_path) {
             ShowString("Building " TIKDB_NAME_ENC "...");
             tik_enc_sys = (BuildTitleKeyInfo("1:/dbs/ticket.db", false, false) == 0);
             tik_enc_emu = (BuildTitleKeyInfo("4:/dbs/ticket.db", false, false) == 0);
-            if (BuildTitleKeyInfo(NULL, false, true) != 0)
+            if (!tik_enc_sys || BuildTitleKeyInfo(NULL, false, true) != 0)
                 tik_enc_sys = tik_enc_emu = false;
         }
         bool tik_dec_sys = false;
@@ -2026,7 +2045,7 @@ u32 GodMode(int entrypoint) {
     #else // standard behaviour
     bootmenu = bootmenu || (bootloader && CheckButton(BOOTMENU_KEY)); // second check for boot menu keys
     #endif
-    while (CheckButton(BOOTPAUSE_KEY)); // don't continue while these keys is held
+    while (CheckButton(BOOTPAUSE_KEY)); // don't continue while these keys are held
     if (show_splash) while (timer_msec( timer ) < 500); // show splash for at least 0.5 sec
     
     // bootmenu handler
@@ -2228,10 +2247,11 @@ u8 GM9HandleUserInput (u8 mode) {
                     const char* optionstr[2] = { "Open this folder", "Open containing folder" };
                     char pathstr[32 + 1];
                     TruncateString(pathstr, curr_entry->path, 32, 8);
-                    user_select = ShowSelectPrompt(2, optionstr, pathstr);
+                    user_select = ShowSelectPrompt(2, optionstr, "%s", pathstr);
                 }
                 if (user_select) {
                     strncpy(current_path, curr_entry->path, 256);
+                    current_path[255] = '\0';
                     if (user_select == 2) {
                         char* last_slash = strrchr(current_path, '/');
                         if (last_slash) *last_slash = '\0'; 
@@ -2402,7 +2422,7 @@ u8 GM9HandleUserInput (u8 mode) {
                     snprintf(promptstr, 64, "Paste \"%s\" here?", namestr);
                 } else snprintf(promptstr, 64, "Paste %lu paths here?", clipboard->n_entries);
                 user_select = ((DriveType(clipboard->entry[0].path) & curr_drvtype & DRV_STDFAT)) ?
-                    ShowSelectPrompt(2, optionstr, promptstr) : (ShowPrompt(true, promptstr) ? 1 : 0);
+                    ShowSelectPrompt(2, optionstr, "%s", promptstr) : (ShowPrompt(true, "%s", promptstr) ? 1 : 0);
                     
                 // backup current clipboard and current path
                 memcpy(clipboard_cur, clipboard, sizeof(DirStruct));
@@ -2438,7 +2458,7 @@ u8 GM9HandleUserInput (u8 mode) {
                 char newname[256];
                 char namestr[20+1];
                 TruncateString(namestr, curr_entry->name, 20, 12);
-                snprintf(newname, 255, curr_entry->name);
+                snprintf(newname, 255, "%s", curr_entry->name);
                 if (ShowStringPrompt(newname, 256, "Rename %s?\nEnter new name below.", namestr)) {
                     if (!PathRename(curr_entry->path, newname))
                         ShowPrompt(false, "Failed renaming path:\n%s", namestr);
@@ -2590,7 +2610,7 @@ u32 ScriptRunner(int entrypoint) {
     InitNandCrypto(entrypoint != ENTRY_B9S);
     InitExtFS();
     
-    while (HID_STATE); // wait until no buttons are pressed
+    while (CheckButton(BOOTPAUSE_KEY)); // don't continue while these keys are held
     while (timer_msec( timer ) < 500); // show splash for at least 0.5 sec
     
     if (PathExist("V:/" VRAM0_AUTORUN_GM9)) {

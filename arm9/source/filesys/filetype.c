@@ -7,7 +7,7 @@
 #include "keydb.h"
 #include "ctrtransfer.h"
 #include "scripting.h"
-#include "pcx.h"
+#include "png.h"
 #include "ui.h" // only for font file detection
 
 u64 IdentifyFileType(const char* path) {
@@ -17,7 +17,7 @@ u64 IdentifyFileType(const char* path) {
     const u8 tickdb_magic[] = { TICKDB_MAGIC };
     const u8 smdh_magic[] = { SMDH_MAGIC };
     const u8 threedsx_magic[] = { THREEDSX_EXT_MAGIC };
-    const u8 pcx_magic[] = { PCX_MAGIC };
+    const u8 png_magic[] = { PNG_MAGIC };
     
     if (!path) return 0; // safety
     u8 header[0x200] __attribute__((aligned(32))); // minimum required size
@@ -118,13 +118,14 @@ u64 IdentifyFileType(const char* path) {
         (GetNcchInfoVersion((NcchInfoHeader*) data)) &&
         (strncasecmp(fname, NCCHINFO_NAME, 32) == 0)) {
         return BIN_NCCHNFO; // ncchinfo.bin file
-    } else if ((fsize > sizeof(pcx_magic)) && (memcmp(data, pcx_magic, sizeof(pcx_magic)) == 0) &&
-        (strncasecmp(ext, "pcx", 4) == 0)) {
-        return GFX_PCX;
+    } else if ((strncasecmp(ext, "png", 4) == 0) &&
+        (fsize > sizeof(png_magic)) && (memcmp(data, png_magic, sizeof(png_magic)) == 0)) {
+        return GFX_PNG;
     } else if (ext && ((strncasecmp(ext, "cdn", 4) == 0) || (strncasecmp(ext, "nus", 4) == 0))) {
         char path_cetk[256];
         char* ext_cetk = path_cetk + (ext - path);
         strncpy(path_cetk, path, 256);
+        path_cetk[255] = '\0';
         strncpy(ext_cetk, "cetk", 5);
         if (FileGetSize(path_cetk) > 0)
             return GAME_NUSCDN; // NUS/CDN type 2
@@ -152,6 +153,7 @@ u64 IdentifyFileType(const char* path) {
         char path_cdn[256];
         char* name_cdn = path_cdn + (fname - path);
         strncpy(path_cdn, path, 256);
+        path_cdn[255] = '\0';
         strncpy(name_cdn, "tmd", 4);
         if (FileGetSize(path_cdn) > 0)
             return GAME_NUSCDN; // NUS/CDN type 1

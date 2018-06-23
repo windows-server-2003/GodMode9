@@ -33,7 +33,13 @@
 #define SD_EJECT      (1 << 17)
 #define TIMEOUT_HID   (1 << 31)
 
+// strings for button conversion
+#define BUTTON_STRINGS  "A", "B", "SELECT", "START", "RIGHT", "LEFT", "UP", "DOWN", "R", "L", "X", "Y"
+
 
 u32 InputWait(u32 timeout_sec);
 u32 InputCheck(bool update_last_state, bool detect_arrow, bool detect_mcu);
 bool CheckButton(u32 button);
+
+void ButtonToString(u32 button, char* str);
+u32 StringToButton(char* str);
