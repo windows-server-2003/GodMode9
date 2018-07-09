@@ -2,26 +2,24 @@
 
 #include "common.h"
 
+#define MAX_SCRIPTS 10
+
 #define INTERVAL_SCROLL 170 // msec
 
-#define OPERATION_COPY     0
-#define OPERATION_INJECT   2
-#define OPERATION_FILL     3
-#define OPERATION_VERIFY   4
-#define OPERATION_FIND     5
-#define OPERATION_DECRYPT  6
-#define OPERATION_ENCRYPT  7
-#define OPERATION_BUILD    8
-#define OPERATION_EXTRACT  9
+bool IsMTmodEnabled();
+void SetMTmodEnabled(bool enable);
 
-bool isMTmodEnabled();
-void setMTmodEnabled(bool enable);
+bool IsTaskLeft();
+void StartTask();
+void FinishTask();
+void SetCurrentTaskStr(const char* str);
+const char* GetCurrentTaskStr();
 
-bool isBGOperationRunning();
-void setBGOperationRunning(bool running);
+int GetScriptNum();
+void StartScript(const char* path);
 
-bool isScriptRunning();
-void setScriptRunning(bool running);
+#define MTassert() if (!_MTassert()) return 0
+bool _MTassert();
 
-void setCurrentOperationId(int id);
-char* getCurrentOperationStr();
+bool MTmodCancelConfirm(const char* str);
+void MTmodScriptList();

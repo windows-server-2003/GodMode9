@@ -13,6 +13,7 @@
 #include "essentials.h" // for essential backup struct
 #include "unittype.h"
 #include "memmap.h"
+#include "multithread.h"
 
 
 static const u8 twl_mbr_std[0x42] = {
@@ -458,6 +459,7 @@ u32 SafeRestoreNandDump(const char* path) {
     }
     
     // main processing loop
+    StartTask("Restoring NAND");
     u32 ret = 0;
     u32 sector0 = SECTOR_SECRET + COUNT_SECRET; // start at the sector after secret sector
     if (!ShowProgress(0, 0, path)) ret = 1;
@@ -476,6 +478,7 @@ u32 SafeRestoreNandDump(const char* path) {
         if (sector1 == fsize / 0x200) break; // at file end
         sector0 = np_info.sector + np_info.count; // skip partition
     }
+    FinishTask();
     
     free(buffer);
     fvx_close(&file);

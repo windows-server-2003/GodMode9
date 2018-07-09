@@ -286,8 +286,9 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
     
     // bottom: instruction block (only show if MTmod is disabled)
     char instr[512];
-    snprintf(instr, 512, "%s\n%s%s%s%s%s%s%s%s",
+    snprintf(instr, 512, "%s\n%s%s%s%s%s%s%s%s%s",
         FLAVOR " " VERSION, // generic start part
+        IsMTmodEnabled() ? "L+Select - Script management menu\n" : "",
         (*curr_path) ? ((clipboard->n_entries == 0) ? "L - MARK files (use with \x18\x19\x1A\x1B)\nX - DELETE / [+R] RENAME file(s)\nY - COPY files / [+R] CREATE entry\n" :
         "L - MARK files (use with \x18\x19\x1A\x1B)\nX - DELETE / [+R] RENAME file(s)\nY - PASTE files / [+R] CREATE entry\n") :
         ((GetWritePermissions() > PERM_BASE) ? "R+Y - Relock write permissions\n" : ""),
@@ -298,7 +299,8 @@ void DrawUserInterface(const char* curr_path, DirEntry* curr_entry, u32 curr_pan
         "R+\x1B\x1A - Switch to prev/next pane\n",
         (clipboard->n_entries) ? "SELECT - Clear Clipboard\n" : "SELECT - Restore Clipboard\n", // only if clipboard is full
         "START - Reboot / [+R] Poweroff\nHOME button for HOME menu"); // generic end part
-    DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr) - (isBGOperationRunning() ? (5+2*FONT_HEIGHT_EXT) : 0), COLOR_STD_FONT, COLOR_STD_BG, instr);
+    DrawStringF(MAIN_SCREEN, instr_x, SCREEN_HEIGHT - 4 - GetDrawStringHeight(instr) -
+        ((IsTaskLeft() || GetScriptNum()) ? (5+2*FONT_HEIGHT_EXT) : 0), COLOR_STD_FONT, COLOR_STD_BG, instr);
 }
 
 void DrawDirContents(DirStruct* contents, u32 cursor, u32* scroll) {
@@ -1042,7 +1044,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
     bool xorpadable = (FTYPE_XORPAD(filetype));
     bool keyinitable = (FTYPE_KEYINIT(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
     bool keyinstallable = (FTYPE_KEYINSTALL(filetype)) && !((drvtype & DRV_VIRTUAL) && (drvtype & DRV_SYSNAND));
-    bool scriptable = (FTYPE_SCRIPT(filetype) && !isScriptRunning() && !isBGOperationRunning());
+    bool scriptable = (FTYPE_SCRIPT(filetype) && !IsTaskLeft());
     bool fontable = (FTYPE_FONT(filetype));
     bool viewable = (FTYPE_GFX(filetype));
     bool bootable = (FTYPE_BOOTABLE(filetype));
@@ -1135,11 +1137,13 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == calcsha) { // -> calculate SHA-256
+        MTassert();
         Sha256Calculator(file_path);
         GetDirContents(current_dir, current_path);
         return 0;
     }
     else if (user_select == calccmac) { // -> calculate CMAC
+        MTassert();
         optionstr[0] = "Check current CMAC only";
         optionstr[1] = "Verify CMAC for all";
         optionstr[2] = "Fix CMAC for all";
@@ -1188,14 +1192,12 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == copystd) { // -> copy to OUTPUT_PATH
+        MTassert();
         StandardCopy(cursor, scroll);
         return 0;
     }
     else if (user_select == inject) { // -> inject data from clipboard
-        if (isBGOperationRunning() || isScriptRunning()) {
-            ShowPrompt(false, "A background process is running!!\nCan't inject.");
-            return 0;
-        }
+        MTassert();
         char origstr[18 + 1];
         TruncateString(origstr, clipboard->entry[0].name, 18, 10);
         u64 offset = ShowHexPrompt(0, 8, "Inject data from %s?\nSpecifiy offset below.", origstr);
@@ -1330,6 +1332,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == decrypt) { // -> decrypt game file
+        MTassert();
         if (cryptable_inplace) {
             optionstr[0] = "Decrypt to " OUTPUT_PATH;
             optionstr[1] = "Decrypt inplace";
@@ -1384,6 +1387,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == encrypt) { // -> encrypt game file
+        MTassert();
         if (cryptable_inplace) {
             optionstr[0] = "Encrypt to " OUTPUT_PATH;
             optionstr[1] = "Encrypt inplace";
@@ -1429,6 +1433,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if ((user_select == cia_build) || (user_select == cia_build_legit) || (user_select == cxi_dump)) { // -> build CIA / dump CXI
+        MTassert();
         char* type = (user_select == cxi_dump) ? "CXI" : "CIA";
         bool force_legit = (user_select == cia_build_legit);
         if ((n_marked > 1) && ShowPrompt(true, "Try to process all %lu selected files?", n_marked)) {
@@ -1468,6 +1473,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == verify) { // -> verify game / nand file
+        MTassert();
         if ((n_marked > 1) && ShowPrompt(true, "Try to verify all %lu selected files?", n_marked)) {
             u32 n_success = 0;
             u32 n_other = 0;
@@ -1605,6 +1611,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if ((user_select == extrcode) || (user_select == extrdiff)) { // -> Extract .code or DIFF partition
+        MTassert();
         if ((n_marked > 1) && ShowPrompt(true, "Try to extract all %lu selected files?", n_marked)) {
             u32 n_success = 0;
             u32 n_other = 0;
@@ -1638,11 +1645,13 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
                 n_success, n_marked, n_other, n_marked);
             else ShowPrompt(false, "%lu/%lu files extracted ok", n_success, n_marked); 
         } else if (filetype & SYS_DIFF) {
+            MTassert();
             ShowString("%s\nExtracting data, please wait...", pathstr);
             if (ExtractDataFromDisaDiff(file_path) == 0) {
                 ShowPrompt(false, "%s\ndata extracted to " OUTPUT_PATH, pathstr);
             } else ShowPrompt(false, "%s\ndata extract failed", pathstr);
         } else {
+            MTassert();
             char extstr[8] = { 0 };
             ShowString("%s\nExtracting .code, please wait...", pathstr);
             if (ExtractCodeFromCxiFile((filetype & GAME_TMD) ? cxi_path : file_path, NULL, extstr) == 0) {
@@ -1652,6 +1661,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == ctrtransfer) { // -> transfer CTRNAND image to SysNAND
+        MTassert();
         char* destdrv[2] = { NULL };
         n_opt = 0;
         if (DriveType("1:")) {
@@ -1672,6 +1682,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == restore) { // -> restore SysNAND (A9LH preserving)
+        MTassert();
         ShowPrompt(false, "%s\nNAND restore %s", pathstr,
             (SafeRestoreNandDump(file_path) == 0) ? "success" : "failed");
         return 0;
@@ -1684,6 +1695,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if ((user_select == xorpad) || (user_select == xorpad_inplace)) { // -> build xorpads
+        MTassert();
         bool inplace = (user_select == xorpad_inplace);
         bool success = (BuildNcchInfoXorpads((inplace) ? current_path : OUTPUT_PATH, file_path) == 0);
         ShowPrompt(false, "%s\nNCCHinfo padgen %s%s", pathstr,
@@ -1719,6 +1731,7 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == install) { // -> install FIRM
+        MTassert();
         size_t firm_size = FileGetSize(file_path);
         u32 slots = 1;
         if (GetNandPartitionInfo(NULL, NP_TYPE_FIRM, NP_SUBTYPE_CTR, 1, NAND_SYSNAND) == 0) {
@@ -1733,12 +1746,16 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == boot) { // -> boot FIRM
-        BootFirmHandler(file_path, true, false);
+        if ((IsTaskLeft() || GetScriptNum()) &&
+            !ShowPrompt(false, "A background process is running.\n"
+                                "Booting firm would terminate it.\n \n"
+                                "Do you really want to boot firm ?")) 
+            BootFirmHandler(file_path, true, false);
         return 0;
     }
     else if (user_select == script) { // execute script
         if (ShowPrompt(true, "%s\nWarning: Do not run scripts\nfrom untrusted sources.\n \nExecute script?", pathstr))
-            ShowPrompt(false, "%s\nScript execute %s", pathstr, ExecuteGM9Script(file_path) ? "success" : "failure");
+            StartScript(file_path);
         GetDirContents(current_dir, current_path);
         ClearScreenF(true, true, COLOR_STD_BG);
         return 0;
@@ -1758,12 +1775,14 @@ u32 FileHandlerMenu(char* current_path, u32* cursor, u32* scroll, PaneData** pan
         return 0;
     }
     else if (user_select == agbexport) { // export GBA VC save
+        MTassert();
         if (DumpGbaVcSavegame(file_path) == 0)
             ShowPrompt(false, "Savegame dumped to " OUTPUT_PATH ".");
         else ShowPrompt(false, "Savegame dump failed!");
         return 0;
     }
     else if (user_select == agbimport) { // import GBA VC save
+        MTassert();
         if (clipboard->n_entries != 1) {
             ShowPrompt(false, "GBA VC savegame has to\nbe in the clipboard.");
         } else {
@@ -1792,7 +1811,7 @@ u32 HomeMoreMenu(char* current_path) {
     int clock = ++n_opt;
     int sysinfo = ++n_opt;
     int readme = (FindVTarFileInfo(VRAM0_README_MD, NULL)) ? (int) ++n_opt : -1;
-    int multithread = ++n_opt;
+    int multithread = (GetScriptNum() || IsTaskLeft()) ? -1 : (int) ++n_opt;
     
     if (sdformat > 0) optionstr[sdformat - 1] = "SD format menu";
     if (bonus > 0) optionstr[bonus - 1] = "Bonus drive setup";
@@ -1802,11 +1821,11 @@ u32 HomeMoreMenu(char* current_path) {
     if (clock > 0) optionstr[clock - 1] = "Set RTC date&time";
     if (sysinfo > 0) optionstr[sysinfo - 1] = "System info";
     if (readme > 0) optionstr[readme - 1] = "Show ReadMe";
-    if (multithread > 0) optionstr[multithread - 1] = isMTmodEnabled() ? "Disable MTmod" : "Enable MTmod";
+    if (multithread > 0) optionstr[multithread - 1] = IsMTmodEnabled() ? "Disable MTmod" : "Enable MTmod";
     
     int user_select = ShowSelectPrompt(n_opt, optionstr, promptstr);
     if (user_select == sdformat) { // format SD card
-        if ((isBGOperationRunning()) && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
+        if ((IsTaskLeft()) && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
             (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
             DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
                 if (!ShowPrompt(true, "The SD will be unmounted and\nthe background process will fail.\nDo you want to continue?"))
@@ -1830,7 +1849,7 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == bonus) { // setup bonus drive
-        if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_BONUS ||
+        if (IsTaskLeft() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_BONUS ||
         DriveType(current_path_cur) & DRV_BONUS)) {
                 if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
                     return GODMODE_NO_EXIT;
@@ -1843,7 +1862,7 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == multi) { // switch EmuNAND offset
-        if (isBGOperationRunning() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_EMUNAND
+        if (IsTaskLeft() && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) & DRV_EMUNAND
         || DriveType(current_path_cur) & DRV_EMUNAND)) {
                 if (!ShowPrompt(true, "This will terminate the background process.\nDo you want to continue?"))
                     return GODMODE_NO_EXIT;
@@ -1933,8 +1952,10 @@ u32 HomeMoreMenu(char* current_path) {
         return 0;
     }
     else if (user_select == multithread) {
-        if (isBGOperationRunning() || isScriptRunning()) ShowPrompt(false, "You can't switch it while\na background process is running.");
-        else setMTmodEnabled(!isMTmodEnabled());
+        if (IsTaskLeft() || GetScriptNum()) ShowPrompt(false, "You can't switch it while\na background process is running.");
+        else SetMTmodEnabled(!IsMTmodEnabled());
+        ShowPrompt(false, "MTmod %sabled", IsMTmodEnabled() ? "En" : "Dis");
+        return 0;
     }
     else return 1;
     
@@ -2064,7 +2085,7 @@ u32 GodMode(int entrypoint) {
             } else if ((user_select == 3) && (FileSelectorSupport(loadpath, "Bootloader payloads menu.\nSelect payload:", PAYLOADS_DIR, "*.firm"))) {
                 BootFirmHandler(loadpath, false, false);
             } else if ((user_select == 4) && (FileSelectorSupport(loadpath, "Bootloader scripts menu.\nSelect script:", SCRIPTS_DIR, "*.gm9"))) {
-                ExecuteGM9Script(loadpath);
+                StartScript(loadpath);
             } else if (user_select == 5) {
                 exit_mode = GODMODE_EXIT_POWEROFF;
             } else if (user_select == 6) {
@@ -2122,8 +2143,449 @@ u32 GodMode(int entrypoint) {
 u8 GM9HandleUserInput (u8 mode) {
     curr_drvtype = DriveType(current_path);
         
-        bool isBG = (mode != GODMODE_MODE_NORMAL); // whether a file operation is running
+    bool isBG = (mode != GODMODE_MODE_NORMAL); // whether a file operation is running
+    
+    // basic sanity checking
+    if (!current_dir->n_entries) { // current dir is empty -> revert to root
+        ShowPrompt(false, "Invalid directory object");
+        *current_path = '\0';
+        DeinitExtFS(); // deinit and...
+        InitExtFS(); // reinitialize extended file system
+        GetDirContents(current_dir, current_path);
+        cursor = 0;
+        if (!current_dir->n_entries) { // should not happen, if it does fail gracefully
+            ShowPrompt(false, "Invalid root directory.");
+            return GODMODE_EXIT_REBOOT;
+        }
+    }
+    if (cursor >= current_dir->n_entries) // cursor beyond allowed range
+        cursor = current_dir->n_entries - 1;
+    curr_entry = &(current_dir->entry[cursor]);
+    
+    if ((mark_next >= 0) && (curr_entry->type != T_DOTDOT)) {
+        curr_entry->marked = mark_next;
+        mark_next = -2;
+    }
+    if (!isBG) { // for background, draw at the end
+        DrawDirContents(current_dir, cursor, &scroll);
+        DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
+        DrawTopBar(current_path);
+    }
+    
+    // check write permissions
+    if (~last_write_perm & GetWritePermissions()) {
+        if (ShowPrompt(true, "Write permissions were changed.\nRelock them?")) SetWritePermissions(last_write_perm, false);
+        last_write_perm = GetWritePermissions();
+        if (isBG) DrawTopBar(current_path); // change the color here
+        return GODMODE_NO_EXIT;
+    }
+    
+    // handle user input
+    u32 pad_state;
+    if (isBG) {
+        pad_state = InputCheck(false, true, (mode == GODMODE_MODE_BG_MCU));
+        if (!pad_state) return GODMODE_NO_EXIT; 
+    }
+    else pad_state = InputWait(3);
+    
+    bool switched;
+    if (isBG) switched = (HID_STATE & BUTTON_R1);
+    else switched = (pad_state & BUTTON_R1);
+    
+    // the MTmod menu
+    if (IsMTmodEnabled() && (HID_STATE & BUTTON_L1) && (pad_state & BUTTON_SELECT))
+        MTmodScriptList();
+    
+    // basic navigation commands
+    if ((pad_state & BUTTON_A) && (curr_entry->type != T_FILE) && (curr_entry->type != T_DOTDOT)) { // for dirs
+        if (switched && !(DriveType(curr_entry->path) & DRV_SEARCH)) { // search directory
+            const char* optionstr[8] = { NULL };
+            char tpath[16] = { 0 };
+            if (!*current_path) snprintf(tpath, 15, "%s/title", curr_entry->path);
+            int n_opt = 0;
+            int srch_t = ((strncmp(curr_entry->path + 1, ":/title", 7) == 0) ||
+                (*tpath && PathExist(tpath))) ? ++n_opt : -1;
+            int srch_f = ++n_opt;
+            int fixcmac = (!*current_path && (strspn(curr_entry->path, "14AB") == 1)) ? ++n_opt : -1;
+            int dirnfo = ++n_opt;
+            int stdcpy = (*current_path && strncmp(current_path, OUTPUT_PATH, 256) != 0) ? ++n_opt : -1;
+            if (srch_t > 0) optionstr[srch_t-1] = "Search for titles";
+            if (srch_f > 0) optionstr[srch_f-1] = "Search for files...";
+            if (fixcmac > 0) optionstr[fixcmac-1] = "Fix CMACs for drive";
+            if (dirnfo > 0) optionstr[dirnfo-1] = (*current_path) ? "Show directory info" : "Show drive info";
+            if (stdcpy > 0) optionstr[stdcpy-1] = "Copy to " OUTPUT_PATH;
+            char namestr[32+1];
+            TruncateString(namestr, (*current_path) ? curr_entry->path : curr_entry->name, 32, 8);
+            int user_select = ShowSelectPrompt(n_opt, optionstr, "%s", namestr);
+            if ((user_select == srch_f) || (user_select == srch_t)) {
+                char searchstr[256];
+                snprintf(searchstr, 256, (user_select == srch_t) ? "*.tmd" : "*");
+                TruncateString(namestr, curr_entry->name, 20, 8);
+                if ((user_select == srch_t) || ShowStringPrompt(searchstr, 256, "Search %s?\nEnter search below.", namestr)) {
+                    SetFSSearch(searchstr, curr_entry->path, (user_select == srch_t));
+                    snprintf(current_path, 256, "Z:");
+                    GetDirContents(current_dir, current_path);
+                    if (current_dir->n_entries) ShowPrompt(false, "Found %lu results.", current_dir->n_entries - 1);
+                    cursor = 1;
+                    scroll = 0;
+                }
+            } else if (user_select == fixcmac) {
+                RecursiveFixFileCmac(curr_entry->path);
+                ShowPrompt(false, "Fix CMACs for drive finished.");
+            } else if (user_select == dirnfo) {
+                bool is_drive = (!*current_path);
+                FILINFO fno;
+                u64 tsize = 0;
+                u32 tdirs = 0;
+                u32 tfiles = 0;
+                
+                ShowString("Analyzing %s, please wait...", is_drive ? "drive" : "dir");
+                if ((is_drive || (fvx_stat(curr_entry->path, &fno) == FR_OK)) &&
+                    DirInfo(curr_entry->path, &tsize, &tdirs, &tfiles)) {
+                    char bytestr[32];
+                    FormatBytes(bytestr, tsize);
+                    if (is_drive) {
+                        char freestr[32];
+                        char drvsstr[32];
+                        char usedstr[32];
+                        FormatBytes(freestr, GetFreeSpace(curr_entry->path));
+                        FormatBytes(drvsstr, GetTotalSpace(curr_entry->path));
+                        FormatBytes(usedstr, GetTotalSpace(curr_entry->path) - GetFreeSpace(curr_entry->path));
+                        ShowPrompt(false, "%s\n \n%lu files & %lu subdirs\n%s total size\n \nspace free: %s\nspace used: %s\nspace total: %s",
+                            namestr, tfiles, tdirs, bytestr, freestr, usedstr, drvsstr);
+                    } else {
+                        ShowPrompt(false, "%s\n \ncreated: %04lu-%02lu-%02lu %02lu:%02lu:%02lu\n%lu files & %lu subdirs\n%s total size\n \n[%c] read-only [%c] hidden\n[%c] system    [%c] archive\n[%c] virtual",
+                            namestr,
+                            1980 + ((fno.fdate >> 9) & 0x7F), (fno.fdate >> 5) & 0x0F, (fno.fdate >> 0) & 0x1F,
+                            (fno.ftime >> 11) & 0x1F, (fno.ftime >> 5) & 0x3F, ((fno.ftime >> 0) & 0x1F) << 1,
+                            tfiles, tdirs, bytestr,
+                            (fno.fattrib & AM_RDO) ? 'X' : ' ', (fno.fattrib & AM_HID) ? 'X' : ' ', (fno.fattrib & AM_SYS) ? 'X' : ' ' ,
+                            (fno.fattrib & AM_ARC) ? 'X' : ' ', (fno.fattrib & AM_VRT) ? 'X' : ' ');
+                    }
+                } else ShowPrompt(false, "Analyze %s: failed!", is_drive ? "drive" : "dir");
+            } else if (user_select == stdcpy) {
+                StandardCopy(&cursor, &scroll);
+            }
+        } else { // one level up
+            u32 user_select = 1;
+            if (curr_drvtype & DRV_SEARCH) { // special menu for search drive
+                const char* optionstr[2] = { "Open this folder", "Open containing folder" };
+                char pathstr[32 + 1];
+                TruncateString(pathstr, curr_entry->path, 32, 8);
+                user_select = ShowSelectPrompt(2, optionstr, "%s", pathstr);
+            }
+            if (user_select) {
+                strncpy(current_path, curr_entry->path, 256);
+                current_path[255] = '\0';
+                if (user_select == 2) {
+                    char* last_slash = strrchr(current_path, '/');
+                    if (last_slash) *last_slash = '\0'; 
+                } 
+                GetDirContents(current_dir, current_path);
+                if (*current_path && (current_dir->n_entries > 1)) {
+                    cursor = 1;
+                    scroll = 0;
+                } else cursor = 0;
+            }
+        }
+    } else if ((pad_state & BUTTON_A) && (curr_entry->type == T_FILE)) { // process a file
+        FileHandlerMenu(current_path, &cursor, &scroll, &pane); // processed externally
+    } else if (*current_path && ((pad_state & BUTTON_B) || // one level down
+        ((pad_state & BUTTON_A) && (curr_entry->type == T_DOTDOT)))) {
+        if (switched) { // use R+B to return to root fast
+            *current_path = '\0';
+            GetDirContents(current_dir, current_path);
+            cursor = scroll = 0;
+        } else {
+            char old_path[256];
+            char* last_slash = strrchr(current_path, '/');
+            strncpy(old_path, current_path, 256);
+            if (last_slash) *last_slash = '\0'; 
+            else *current_path = '\0';
+            GetDirContents(current_dir, current_path);
+            if (*old_path && current_dir->n_entries) {
+                for (cursor = current_dir->n_entries - 1;
+                    (cursor > 0) && (strncmp(current_dir->entry[cursor].path, old_path, 256) != 0); cursor--);
+                if (*current_path && !cursor && (current_dir->n_entries > 1)) cursor = 1; // don't set it on the dotdot
+                scroll = 0;
+            }
+        }
+    } else if (switched && (pad_state & BUTTON_B)) { // unmount SD card
+        if (!CheckSDMountState()) {
+            while (!InitSDCardFS() &&
+                ShowPrompt(true, "Initialising SD card failed! Retry?"));
+        } else {
+            if (isBG && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
+                (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
+                DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
+                if (!ShowPrompt(true, "The file operation will be fail.\nDo you really want to unmount SD?"))
+                    return GODMODE_NO_EXIT;
+            }
+            DeinitSDCardFS();
+            if (clipboard->n_entries && !PathExist(clipboard->entry[0].path))
+                clipboard->n_entries = 0; // remove SD clipboard entries
+        }
+        ClearScreenF(true, true, COLOR_STD_BG);
+        AutoEmuNandBase(true);
+        InitExtFS();
+        GetDirContents(current_dir, current_path);
+        if (cursor >= current_dir->n_entries) cursor = 0;
+    } else if (!switched && (pad_state & BUTTON_DOWN) && (cursor + 1 < current_dir->n_entries))  { // cursor down
+        if (pad_state & BUTTON_L1) mark_next = curr_entry->marked;
+        cursor++;
+    } else if (!switched && (pad_state & BUTTON_UP) && cursor) { // cursor up
+        if (pad_state & BUTTON_L1) mark_next = curr_entry->marked;
+        cursor--;
+    } else if (switched && (pad_state & (BUTTON_RIGHT|BUTTON_LEFT))) { // switch pane
+        memcpy(pane->path, current_path, 256);  // store state in current pane
+        pane->cursor = cursor;
+        pane->scroll = scroll;
+        (pad_state & BUTTON_LEFT) ? pane-- : pane++; // switch to next
+        if (pane < panedata) pane += N_PANES;
+        else if (pane >= panedata + N_PANES) pane -= N_PANES;
+        memcpy(current_path, pane->path, 256);  // get state from next pane
+        cursor = pane->cursor;
+        scroll = pane->scroll;
+        GetDirContents(current_dir, current_path);
+    } else if (switched && (pad_state & BUTTON_DOWN)) { // force reload file list
+        GetDirContents(current_dir, current_path);
+        ClearScreenF(true, true, COLOR_STD_BG);
+    } else if ((pad_state & BUTTON_RIGHT) && !(pad_state & BUTTON_L1)) { // cursor down (quick)
+        cursor += quick_stp;
+    } else if ((pad_state & BUTTON_LEFT) && !(pad_state & BUTTON_L1)) { // cursor up (quick)
+        cursor = (cursor >= quick_stp) ? cursor - quick_stp : 0;
+    } else if (pad_state & BUTTON_RIGHT) { // mark all entries
+        for (u32 c = 1; c < current_dir->n_entries; c++) current_dir->entry[c].marked = 1;
+        mark_next = 1;
+    } else if (pad_state & BUTTON_LEFT) { // unmark all entries
+        for (u32 c = 1; c < current_dir->n_entries; c++) current_dir->entry[c].marked = 0;
+        mark_next = 0;
+    } else if (switched && (pad_state & BUTTON_L1)) { // switched L -> screenshot
+        // this is handled in hid.h
+    } else if (*current_path && (pad_state & BUTTON_L1) && (curr_entry->type != T_DOTDOT)) {
+        // unswitched L - mark/unmark single entry
+        if (mark_next < -1) mark_next = -1;
+        else curr_entry->marked ^= 0x1;
+    } else if (!switched && pad_state & BUTTON_SELECT) { // clear/restore clipboard
+        clipboard->n_entries = (clipboard->n_entries > 0) ? 0 : last_clipboard_size;
+    }
+
+    // highly specific commands
+    if (!*current_path) { // in the root folder...
+        if (switched && (pad_state & BUTTON_X)) { // unmount image
+            if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) & DRV_IMAGE))
+                clipboard->n_entries = 0; // remove last mounted image clipboard entries
+            InitImgFS(NULL);
+            ClearScreenF(false, true, COLOR_STD_BG);
+            GetDirContents(current_dir, current_path);
+        } else if (switched && (pad_state & BUTTON_Y)) {
+            SetWritePermissions(PERM_BASE, false);
+            ClearScreenF(false, true, COLOR_STD_BG);
+        }
+    } else if (!switched) { // standard unswitched command set
+        if ((curr_drvtype & DRV_VIRTUAL) && (pad_state & BUTTON_X)) {
+            ShowPrompt(false, "Not allowed in virtual path");
+        } else if (pad_state & BUTTON_X) { // delete a file 
+            u32 n_marked = 0;
+            if (curr_entry->marked) {
+                for (u32 c = 0; c < current_dir->n_entries; c++)
+                    if (current_dir->entry[c].marked) n_marked++;
+            }
+            if (n_marked) {
+                if (ShowPrompt(true, "Delete %u path(s)?", n_marked)) {
+                    u32 n_errors = 0;
+                    ShowString("Deleting files, please wait...");
+                    for (u32 c = 0; c < current_dir->n_entries; c++)
+                        if (current_dir->entry[c].marked && !PathDelete(current_dir->entry[c].path))
+                            n_errors++;
+                    ClearScreenF(true, false, COLOR_STD_BG);
+                    if (n_errors) ShowPrompt(false, "Failed deleting %u/%u path(s)", n_errors, n_marked);
+                }
+            } else if (curr_entry->type != T_DOTDOT) {
+                char namestr[36+1];
+                TruncateString(namestr, curr_entry->name, 28, 12);
+                if (ShowPrompt(true, "Delete \"%s\"?", namestr)) {
+                    ShowString("Deleting files, please wait...");
+                    if (!PathDelete(curr_entry->path))
+                        ShowPrompt(false, "Failed deleting:\n%s", namestr);
+                    ClearScreenF(true, false, COLOR_STD_BG);
+                }
+            }
+            GetDirContents(current_dir, current_path);
+        } else if ((pad_state & BUTTON_Y) && (clipboard->n_entries == 0)) { // fill clipboard
+            for (u32 c = 0; c < current_dir->n_entries; c++) {
+                if (current_dir->entry[c].marked) {
+                    current_dir->entry[c].marked = 0;
+                    DirEntryCpy(&(clipboard->entry[clipboard->n_entries]), &(current_dir->entry[c]));
+                    clipboard->n_entries++;
+                }
+            }
+            if ((clipboard->n_entries == 0) && (curr_entry->type != T_DOTDOT)) {
+                DirEntryCpy(&(clipboard->entry[0]), curr_entry);
+                clipboard->n_entries = 1;
+            }
+            if (clipboard->n_entries)
+                last_clipboard_size = clipboard->n_entries;
+        } else if ((curr_drvtype & DRV_SEARCH) && (pad_state & BUTTON_Y)) {
+            ShowPrompt(false, "Not allowed in search drive");
+        } else if ((curr_drvtype & DRV_GAME) && (pad_state & BUTTON_Y)) {
+            ShowPrompt(false, "Not allowed in virtual game path");
+        } else if ((curr_drvtype & DRV_XORPAD) && (pad_state & BUTTON_Y)) {
+            ShowPrompt(false, "Not allowed in XORpad drive");
+        } else if ((curr_drvtype & DRV_CART) && (pad_state & BUTTON_Y)) {
+            ShowPrompt(false, "Not allowed in gamecart drive");
+        } else if ((isBG || GetScriptNum()) && (pad_state & BUTTON_Y)) {
+            ShowPrompt(false, "A background process is running.\nCan't continue.");
+        } else if (pad_state & BUTTON_Y) { // paste files
+            const char* optionstr[2] = { "Copy path(s)", "Move path(s)" };
+            char promptstr[64];
+            u32 flags = 0;
+            u32 user_select;
+            if (clipboard->n_entries == 1) {
+                char namestr[20+1];
+                TruncateString(namestr, clipboard->entry[0].name, 20, 12);
+                snprintf(promptstr, 64, "Paste \"%s\" here?", namestr);
+            } else snprintf(promptstr, 64, "Paste %lu paths here?", clipboard->n_entries);
+            user_select = ((DriveType(clipboard->entry[0].path) & curr_drvtype & DRV_STDFAT)) ?
+                ShowSelectPrompt(2, optionstr, "%s", promptstr) : (ShowPrompt(true, "%s", promptstr) ? 1 : 0);
+                
+            // backup current clipboard and current path
+            memcpy(clipboard_cur, clipboard, sizeof(DirStruct));
+            snprintf(current_path_cur, 255, "%s", current_path);
+            clipboard->n_entries = 0;
+            
+            if (user_select) {
+                for (u32 c = 0; c < clipboard_cur->n_entries; c++) {
+                    char namestr[36+1];
+                    TruncateString(namestr, clipboard_cur->entry[c].name, 36, 12);
+                    flags &= ~ASK_ALL;
+                    if (c < clipboard_cur->n_entries - 1) flags |= ASK_ALL;
+                    if ((user_select == 1) && !PathCopy(current_path_cur, clipboard_cur->entry[c].path, &flags)) {    
+                        if (c + 1 < clipboard_cur->n_entries) {
+                            if (!ShowPrompt(true, "Failed copying path:\n%s\nProcess remaining?", namestr)) break;
+                        } else ShowPrompt(false, "Failed copying path:\n%s", namestr);
+                    } else if ((user_select == 2) && !PathMove(current_path_cur, clipboard_cur->entry[c].path, &flags)) {    
+                        if (c + 1 < clipboard_cur->n_entries) {
+                            if (!ShowPrompt(true, "Failed moving path:\n%s\nProcess remaining?", namestr)) break;
+                        } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
+                    }
+                }
+                GetDirContents(current_dir, current_path);
+            }
+            ClearScreenF(true, false, COLOR_STD_BG);
+        }
+    } else { // switched command set
+        if ((curr_drvtype & DRV_VIRTUAL) && (pad_state & (BUTTON_X|BUTTON_Y))) {
+            ShowPrompt(false, "Not allowed in virtual path");
+        } else if ((curr_drvtype & DRV_ALIAS) && (pad_state & (BUTTON_X))) {
+            ShowPrompt(false, "Not allowed in alias path");
+        } else if ((pad_state & BUTTON_X) && (curr_entry->type != T_DOTDOT)) { // rename a file
+            char newname[256];
+            char namestr[20+1];
+            TruncateString(namestr, curr_entry->name, 20, 12);
+            snprintf(newname, 255, "%s", curr_entry->name);
+            if (ShowStringPrompt(newname, 256, "Rename %s?\nEnter new name below.", namestr)) {
+                if (!PathRename(curr_entry->path, newname))
+                    ShowPrompt(false, "Failed renaming path:\n%s", namestr);
+                else {
+                    GetDirContents(current_dir, current_path);
+                    for (cursor = (current_dir->n_entries) ? current_dir->n_entries - 1 : 0;
+                        (cursor > 1) && (strncmp(current_dir->entry[cursor].name, newname, 256) != 0); cursor--);
+                }
+            }
+        } else if (pad_state & BUTTON_Y) { // create an entry
+            const char* optionstr[] = { "Create a folder", "Create a dummy file" };
+            u32 type = ShowSelectPrompt(2, optionstr, "Create a new entry here?\nSelect type.");
+            if (type) {
+                const char* typestr = (type == 1) ? "folder" : (type == 2) ? "file" : NULL;
+                char ename[256];
+                u64 fsize = 0;
+                snprintf(ename, 255, (type == 1) ? "newdir" : "dummy.bin");
+                if ((ShowStringPrompt(ename, 256, "Create a new %s here?\nEnter name below.", typestr)) &&
+                    ((type != 2) || ((fsize = ShowNumberPrompt(0, "Create a new %s here?\nEnter file size below.", typestr)) != (u64) -1))) {
+                    if (((type == 1) && !DirCreate(current_path, ename)) ||
+                        ((type == 2) && !FileCreateDummy(current_path, ename, fsize))) {
+                        char namestr[36+1];
+                        TruncateString(namestr, ename, 36, 12);
+                        ShowPrompt(false, "Failed creating %s:\n%s", typestr, namestr);
+                    } else {
+                        GetDirContents(current_dir, current_path);
+                        for (cursor = (current_dir->n_entries) ? current_dir->n_entries - 1 : 0;
+                            (cursor > 1) && (strncmp(current_dir->entry[cursor].name, ename, 256) != 0); cursor--);
+                    }
+                }
+            }
+        }
+    }
+    
+    if (pad_state & BUTTON_START) {
+        return (switched || HID_STATE & BUTTON_LEFT) ? GODMODE_EXIT_POWEROFF : GODMODE_EXIT_REBOOT;
+    } else if (pad_state & (BUTTON_HOME|BUTTON_POWER)) { // Home menu
+        const char* optionstr[8];
+        const char* buttonstr = (pad_state & BUTTON_HOME) ? "HOME" : "POWER";
+        u32 n_opt = 0;
+        int poweroff = ++n_opt;
+        int reboot = ++n_opt;
+        int scripts = (IsTaskLeft()) ? 0 : ++n_opt;
+        int payloads = ++n_opt;
+        int more = ++n_opt;
+        if (poweroff > 0) optionstr[poweroff - 1] = "Poweroff system";
+        if (reboot > 0) optionstr[reboot - 1] = "Reboot system";
+        if (scripts > 0) optionstr[scripts - 1] = "Scripts...";
+        if (payloads > 0) optionstr[payloads - 1] = "Payloads...";
+        if (more > 0) optionstr[more - 1] = "More...";
         
+        int user_select = 0;
+        while ((user_select = ShowSelectPrompt(n_opt, optionstr, "%s button pressed.\nSelect action:", buttonstr)) &&
+            (user_select != poweroff) && (user_select != reboot)) {
+            char loadpath[256];
+            if ((user_select == more) && (HomeMoreMenu(current_path) == 0)) break; // more... menu
+            else if (user_select == scripts) {
+                if (!CheckSupportDir(SCRIPTS_DIR)) {
+                    ShowPrompt(false, "Scripts directory not found.\n(default path: 0:/gm9/" SCRIPTS_DIR ")");
+                } else if (FileSelectorSupport(loadpath, "HOME scripts... menu.\nSelect script:", SCRIPTS_DIR, "*.gm9")) {
+                    StartScript(loadpath);
+                    GetDirContents(current_dir, current_path);
+                    ClearScreenF(true, true, COLOR_STD_BG);
+                    break;
+                }
+            } else if (user_select == payloads) {
+                if ((GetScriptNum() || IsTaskLeft()) && !ShowPrompt(true, "A background process is running!!\nLoading a payload will terminate it.\nDo you want to continue?")) continue;
+                if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
+                else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm")) {
+                    BootFirmHandler(loadpath, false, false);
+                }
+            }
+        }
+        
+        if (user_select == poweroff)
+            return GODMODE_EXIT_POWEROFF;
+        else if (user_select == reboot)
+            return GODMODE_EXIT_REBOOT;
+    } else if (pad_state & (CART_INSERT|CART_EJECT)) {
+        if (!InitVCartDrive() && (pad_state & CART_INSERT)) // reinit virtual cart drive
+            ShowPrompt(false, "Cart init failed!");
+        if (!(*current_path) || (curr_drvtype & DRV_CART))
+            GetDirContents(current_dir, current_path); // refresh dir contents
+    } else if (pad_state & SD_INSERT) {
+        while (!InitSDCardFS() && ShowPrompt(true, "Initialising SD card failed! Retry?"));
+        ClearScreenF(true, true, COLOR_STD_BG);
+        AutoEmuNandBase(true);
+        InitExtFS();
+        GetDirContents(current_dir, current_path);
+    } else if ((pad_state & SD_EJECT) && CheckSDMountState()) {
+        ShowPrompt(false, "!Unexpected SD card removal!\n \nTo prevent data loss, unmount\nbefore ejecting the SD card.");
+        DeinitExtFS();
+        DeinitSDCardFS();
+        InitExtFS();
+        if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) &
+            (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE)))
+            clipboard->n_entries = 0; // remove SD clipboard entries
+        GetDirContents(current_dir, current_path);
+    }
+    
+    // check and draw ui here
+    if (isBG) {
         // basic sanity checking
         if (!current_dir->n_entries) { // current dir is empty -> revert to root
             ShowPrompt(false, "Invalid directory object");
@@ -2145,447 +2607,10 @@ u8 GM9HandleUserInput (u8 mode) {
             curr_entry->marked = mark_next;
             mark_next = -2;
         }
-        if (!isBG) { // for background, draw at the end
-            DrawDirContents(current_dir, cursor, &scroll);
-            DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
-            DrawTopBar(current_path);
-        }
-        
-        // check write permissions
-        if (~last_write_perm & GetWritePermissions()) {
-            if (ShowPrompt(true, "Write permissions were changed.\nRelock them?")) SetWritePermissions(last_write_perm, false);
-            last_write_perm = GetWritePermissions();
-            if (isBG) DrawTopBar(current_path); // change the color here
-            return GODMODE_NO_EXIT;
-        }
-        
-        // handle user input
-        u32 pad_state;
-        if (isBG) {
-            pad_state = InputCheck(false, true, (mode == GODMODE_MODE_BG_MCU));
-            if (!pad_state) return GODMODE_NO_EXIT; 
-        }
-        else pad_state = InputWait(3);
-        
-        bool switched;
-        if (isBG) switched = (HID_STATE & BUTTON_R1);
-        else switched = (pad_state & BUTTON_R1);
-        
-        // basic navigation commands
-        if ((pad_state & BUTTON_A) && (curr_entry->type != T_FILE) && (curr_entry->type != T_DOTDOT)) { // for dirs
-            if (switched && !(DriveType(curr_entry->path) & DRV_SEARCH)) { // search directory
-                const char* optionstr[8] = { NULL };
-                char tpath[16] = { 0 };
-                if (!*current_path) snprintf(tpath, 15, "%s/title", curr_entry->path);
-                int n_opt = 0;
-                int srch_t = ((strncmp(curr_entry->path + 1, ":/title", 7) == 0) ||
-                    (*tpath && PathExist(tpath))) ? ++n_opt : -1;
-                int srch_f = ++n_opt;
-                int fixcmac = (!*current_path && (strspn(curr_entry->path, "14AB") == 1)) ? ++n_opt : -1;
-                int dirnfo = ++n_opt;
-                int stdcpy = (*current_path && strncmp(current_path, OUTPUT_PATH, 256) != 0) ? ++n_opt : -1;
-                if (srch_t > 0) optionstr[srch_t-1] = "Search for titles";
-                if (srch_f > 0) optionstr[srch_f-1] = "Search for files...";
-                if (fixcmac > 0) optionstr[fixcmac-1] = "Fix CMACs for drive";
-                if (dirnfo > 0) optionstr[dirnfo-1] = (*current_path) ? "Show directory info" : "Show drive info";
-                if (stdcpy > 0) optionstr[stdcpy-1] = "Copy to " OUTPUT_PATH;
-                char namestr[32+1];
-                TruncateString(namestr, (*current_path) ? curr_entry->path : curr_entry->name, 32, 8);
-                int user_select = ShowSelectPrompt(n_opt, optionstr, "%s", namestr);
-                if ((user_select == srch_f) || (user_select == srch_t)) {
-                    char searchstr[256];
-                    snprintf(searchstr, 256, (user_select == srch_t) ? "*.tmd" : "*");
-                    TruncateString(namestr, curr_entry->name, 20, 8);
-                    if ((user_select == srch_t) || ShowStringPrompt(searchstr, 256, "Search %s?\nEnter search below.", namestr)) {
-                        SetFSSearch(searchstr, curr_entry->path, (user_select == srch_t));
-                        snprintf(current_path, 256, "Z:");
-                        GetDirContents(current_dir, current_path);
-                        if (current_dir->n_entries) ShowPrompt(false, "Found %lu results.", current_dir->n_entries - 1);
-                        cursor = 1;
-                        scroll = 0;
-                    }
-                } else if (user_select == fixcmac) {
-                    RecursiveFixFileCmac(curr_entry->path);
-                    ShowPrompt(false, "Fix CMACs for drive finished.");
-                } else if (user_select == dirnfo) {
-                    bool is_drive = (!*current_path);
-                    FILINFO fno;
-                    u64 tsize = 0;
-                    u32 tdirs = 0;
-                    u32 tfiles = 0;
-                    
-                    ShowString("Analyzing %s, please wait...", is_drive ? "drive" : "dir");
-                    if ((is_drive || (fvx_stat(curr_entry->path, &fno) == FR_OK)) &&
-                        DirInfo(curr_entry->path, &tsize, &tdirs, &tfiles)) {
-                        char bytestr[32];
-                        FormatBytes(bytestr, tsize);
-                        if (is_drive) {
-                            char freestr[32];
-                            char drvsstr[32];
-                            char usedstr[32];
-                            FormatBytes(freestr, GetFreeSpace(curr_entry->path));
-                            FormatBytes(drvsstr, GetTotalSpace(curr_entry->path));
-                            FormatBytes(usedstr, GetTotalSpace(curr_entry->path) - GetFreeSpace(curr_entry->path));
-                            ShowPrompt(false, "%s\n \n%lu files & %lu subdirs\n%s total size\n \nspace free: %s\nspace used: %s\nspace total: %s",
-                                namestr, tfiles, tdirs, bytestr, freestr, usedstr, drvsstr);
-                        } else {
-                            ShowPrompt(false, "%s\n \ncreated: %04lu-%02lu-%02lu %02lu:%02lu:%02lu\n%lu files & %lu subdirs\n%s total size\n \n[%c] read-only [%c] hidden\n[%c] system    [%c] archive\n[%c] virtual",
-                                namestr,
-                                1980 + ((fno.fdate >> 9) & 0x7F), (fno.fdate >> 5) & 0x0F, (fno.fdate >> 0) & 0x1F,
-                                (fno.ftime >> 11) & 0x1F, (fno.ftime >> 5) & 0x3F, ((fno.ftime >> 0) & 0x1F) << 1,
-                                tfiles, tdirs, bytestr,
-                                (fno.fattrib & AM_RDO) ? 'X' : ' ', (fno.fattrib & AM_HID) ? 'X' : ' ', (fno.fattrib & AM_SYS) ? 'X' : ' ' ,
-                                (fno.fattrib & AM_ARC) ? 'X' : ' ', (fno.fattrib & AM_VRT) ? 'X' : ' ');
-                        }
-                    } else ShowPrompt(false, "Analyze %s: failed!", is_drive ? "drive" : "dir");
-                } else if (user_select == stdcpy) {
-                    StandardCopy(&cursor, &scroll);
-                }
-            } else { // one level up
-                u32 user_select = 1;
-                if (curr_drvtype & DRV_SEARCH) { // special menu for search drive
-                    const char* optionstr[2] = { "Open this folder", "Open containing folder" };
-                    char pathstr[32 + 1];
-                    TruncateString(pathstr, curr_entry->path, 32, 8);
-                    user_select = ShowSelectPrompt(2, optionstr, "%s", pathstr);
-                }
-                if (user_select) {
-                    strncpy(current_path, curr_entry->path, 256);
-                    current_path[255] = '\0';
-                    if (user_select == 2) {
-                        char* last_slash = strrchr(current_path, '/');
-                        if (last_slash) *last_slash = '\0'; 
-                    } 
-                    GetDirContents(current_dir, current_path);
-                    if (*current_path && (current_dir->n_entries > 1)) {
-                        cursor = 1;
-                        scroll = 0;
-                    } else cursor = 0;
-                }
-            }
-        } else if ((pad_state & BUTTON_A) && (curr_entry->type == T_FILE)) { // process a file
-            FileHandlerMenu(current_path, &cursor, &scroll, &pane); // processed externally
-        } else if (*current_path && ((pad_state & BUTTON_B) || // one level down
-            ((pad_state & BUTTON_A) && (curr_entry->type == T_DOTDOT)))) {
-            if (switched) { // use R+B to return to root fast
-                *current_path = '\0';
-                GetDirContents(current_dir, current_path);
-                cursor = scroll = 0;
-            } else {
-                char old_path[256];
-                char* last_slash = strrchr(current_path, '/');
-                strncpy(old_path, current_path, 256);
-                if (last_slash) *last_slash = '\0'; 
-                else *current_path = '\0';
-                GetDirContents(current_dir, current_path);
-                if (*old_path && current_dir->n_entries) {
-                    for (cursor = current_dir->n_entries - 1;
-                        (cursor > 0) && (strncmp(current_dir->entry[cursor].path, old_path, 256) != 0); cursor--);
-                    if (*current_path && !cursor && (current_dir->n_entries > 1)) cursor = 1; // don't set it on the dotdot
-                    scroll = 0;
-                }
-            }
-        } else if (switched && (pad_state & BUTTON_B)) { // unmount SD card
-            if (!CheckSDMountState()) {
-                while (!InitSDCardFS() &&
-                    ShowPrompt(true, "Initialising SD card failed! Retry?"));
-            } else {
-                if (isBG && clipboard_cur->n_entries && (DriveType(clipboard_cur->entry[0].path) &
-                    (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE) ||
-                    DriveType(current_path_cur) & (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE))) {
-                    if (!ShowPrompt(true, "The file operation will be fail.\nDo you really want to unmount SD?"))
-                        return GODMODE_NO_EXIT;
-                }
-                DeinitSDCardFS();
-                if (clipboard->n_entries && !PathExist(clipboard->entry[0].path))
-                    clipboard->n_entries = 0; // remove SD clipboard entries
-            }
-            ClearScreenF(true, true, COLOR_STD_BG);
-            AutoEmuNandBase(true);
-            InitExtFS();
-            GetDirContents(current_dir, current_path);
-            if (cursor >= current_dir->n_entries) cursor = 0;
-        } else if (!switched && (pad_state & BUTTON_DOWN) && (cursor + 1 < current_dir->n_entries))  { // cursor down
-            if (pad_state & BUTTON_L1) mark_next = curr_entry->marked;
-            cursor++;
-        } else if (!switched && (pad_state & BUTTON_UP) && cursor) { // cursor up
-            if (pad_state & BUTTON_L1) mark_next = curr_entry->marked;
-            cursor--;
-        } else if (switched && (pad_state & (BUTTON_RIGHT|BUTTON_LEFT))) { // switch pane
-            memcpy(pane->path, current_path, 256);  // store state in current pane
-            pane->cursor = cursor;
-            pane->scroll = scroll;
-            (pad_state & BUTTON_LEFT) ? pane-- : pane++; // switch to next
-            if (pane < panedata) pane += N_PANES;
-            else if (pane >= panedata + N_PANES) pane -= N_PANES;
-            memcpy(current_path, pane->path, 256);  // get state from next pane
-            cursor = pane->cursor;
-            scroll = pane->scroll;
-            GetDirContents(current_dir, current_path);
-        } else if (switched && (pad_state & BUTTON_DOWN)) { // force reload file list
-            GetDirContents(current_dir, current_path);
-            ClearScreenF(true, true, COLOR_STD_BG);
-        } else if ((pad_state & BUTTON_RIGHT) && !(pad_state & BUTTON_L1)) { // cursor down (quick)
-            cursor += quick_stp;
-        } else if ((pad_state & BUTTON_LEFT) && !(pad_state & BUTTON_L1)) { // cursor up (quick)
-            cursor = (cursor >= quick_stp) ? cursor - quick_stp : 0;
-        } else if (pad_state & BUTTON_RIGHT) { // mark all entries
-            for (u32 c = 1; c < current_dir->n_entries; c++) current_dir->entry[c].marked = 1;
-            mark_next = 1;
-        } else if (pad_state & BUTTON_LEFT) { // unmark all entries
-            for (u32 c = 1; c < current_dir->n_entries; c++) current_dir->entry[c].marked = 0;
-            mark_next = 0;
-        } else if (switched && (pad_state & BUTTON_L1)) { // switched L -> screenshot
-            // this is handled in hid.h
-        } else if (*current_path && (pad_state & BUTTON_L1) && (curr_entry->type != T_DOTDOT)) {
-            // unswitched L - mark/unmark single entry
-            if (mark_next < -1) mark_next = -1;
-            else curr_entry->marked ^= 0x1;
-        } else if (!switched && pad_state & BUTTON_SELECT) { // clear/restore clipboard
-            clipboard->n_entries = (clipboard->n_entries > 0) ? 0 : last_clipboard_size;
-        }
-
-        // highly specific commands
-        if (!*current_path) { // in the root folder...
-            if (switched && (pad_state & BUTTON_X)) { // unmount image
-                if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) & DRV_IMAGE))
-                    clipboard->n_entries = 0; // remove last mounted image clipboard entries
-                InitImgFS(NULL);
-                ClearScreenF(false, true, COLOR_STD_BG);
-                GetDirContents(current_dir, current_path);
-            } else if (switched && (pad_state & BUTTON_Y)) {
-                SetWritePermissions(PERM_BASE, false);
-                ClearScreenF(false, true, COLOR_STD_BG);
-            }
-        } else if (!switched) { // standard unswitched command set
-            if ((curr_drvtype & DRV_VIRTUAL) && (pad_state & BUTTON_X)) {
-                ShowPrompt(false, "Not allowed in virtual path");
-            } else if (pad_state & BUTTON_X) { // delete a file 
-                u32 n_marked = 0;
-                if (curr_entry->marked) {
-                    for (u32 c = 0; c < current_dir->n_entries; c++)
-                        if (current_dir->entry[c].marked) n_marked++;
-                }
-                if (n_marked) {
-                    if (ShowPrompt(true, "Delete %u path(s)?", n_marked)) {
-                        u32 n_errors = 0;
-                        ShowString("Deleting files, please wait...");
-                        for (u32 c = 0; c < current_dir->n_entries; c++)
-                            if (current_dir->entry[c].marked && !PathDelete(current_dir->entry[c].path))
-                                n_errors++;
-                        ClearScreenF(true, false, COLOR_STD_BG);
-                        if (n_errors) ShowPrompt(false, "Failed deleting %u/%u path(s)", n_errors, n_marked);
-                    }
-                } else if (curr_entry->type != T_DOTDOT) {
-                    char namestr[36+1];
-                    TruncateString(namestr, curr_entry->name, 28, 12);
-                    if (ShowPrompt(true, "Delete \"%s\"?", namestr)) {
-                        ShowString("Deleting files, please wait...");
-                        if (!PathDelete(curr_entry->path))
-                            ShowPrompt(false, "Failed deleting:\n%s", namestr);
-                        ClearScreenF(true, false, COLOR_STD_BG);
-                    }
-                }
-                GetDirContents(current_dir, current_path);
-            } else if ((pad_state & BUTTON_Y) && (clipboard->n_entries == 0)) { // fill clipboard
-                for (u32 c = 0; c < current_dir->n_entries; c++) {
-                    if (current_dir->entry[c].marked) {
-                        current_dir->entry[c].marked = 0;
-                        DirEntryCpy(&(clipboard->entry[clipboard->n_entries]), &(current_dir->entry[c]));
-                        clipboard->n_entries++;
-                    }
-                }
-                if ((clipboard->n_entries == 0) && (curr_entry->type != T_DOTDOT)) {
-                    DirEntryCpy(&(clipboard->entry[0]), curr_entry);
-                    clipboard->n_entries = 1;
-                }
-                if (clipboard->n_entries)
-                    last_clipboard_size = clipboard->n_entries;
-            } else if ((curr_drvtype & DRV_SEARCH) && (pad_state & BUTTON_Y)) {
-                ShowPrompt(false, "Not allowed in search drive");
-            } else if ((curr_drvtype & DRV_GAME) && (pad_state & BUTTON_Y)) {
-                ShowPrompt(false, "Not allowed in virtual game path");
-            } else if ((curr_drvtype & DRV_XORPAD) && (pad_state & BUTTON_Y)) {
-                ShowPrompt(false, "Not allowed in XORpad drive");
-            } else if ((curr_drvtype & DRV_CART) && (pad_state & BUTTON_Y)) {
-                ShowPrompt(false, "Not allowed in gamecart drive");
-            } else if ((isBG || isScriptRunning()) && (pad_state & BUTTON_Y)) {
-                ShowPrompt(false, "A background process is running.\nCan't continue.");
-            } else if (pad_state & BUTTON_Y) { // paste files
-                const char* optionstr[2] = { "Copy path(s)", "Move path(s)" };
-                char promptstr[64];
-                u32 flags = 0;
-                u32 user_select;
-                if (clipboard->n_entries == 1) {
-                    char namestr[20+1];
-                    TruncateString(namestr, clipboard->entry[0].name, 20, 12);
-                    snprintf(promptstr, 64, "Paste \"%s\" here?", namestr);
-                } else snprintf(promptstr, 64, "Paste %lu paths here?", clipboard->n_entries);
-                user_select = ((DriveType(clipboard->entry[0].path) & curr_drvtype & DRV_STDFAT)) ?
-                    ShowSelectPrompt(2, optionstr, "%s", promptstr) : (ShowPrompt(true, "%s", promptstr) ? 1 : 0);
-                    
-                // backup current clipboard and current path
-                memcpy(clipboard_cur, clipboard, sizeof(DirStruct));
-                snprintf(current_path_cur, 255, current_path);
-                clipboard->n_entries = 0;
-                
-                if (user_select) {
-                    for (u32 c = 0; c < clipboard_cur->n_entries; c++) {
-                        char namestr[36+1];
-                        TruncateString(namestr, clipboard_cur->entry[c].name, 36, 12);
-                        flags &= ~ASK_ALL;
-                        if (c < clipboard_cur->n_entries - 1) flags |= ASK_ALL;
-                        if ((user_select == 1) && !PathCopy(current_path_cur, clipboard_cur->entry[c].path, &flags)) {    
-                            if (c + 1 < clipboard_cur->n_entries) {
-                                if (!ShowPrompt(true, "Failed copying path:\n%s\nProcess remaining?", namestr)) break;
-                            } else ShowPrompt(false, "Failed copying path:\n%s", namestr);
-                        } else if ((user_select == 2) && !PathMove(current_path_cur, clipboard_cur->entry[c].path, &flags)) {    
-                            if (c + 1 < clipboard_cur->n_entries) {
-                                if (!ShowPrompt(true, "Failed moving path:\n%s\nProcess remaining?", namestr)) break;
-                            } else ShowPrompt(false, "Failed moving path:\n%s", namestr);
-                        }
-                    }
-                    GetDirContents(current_dir, current_path);
-                }
-                ClearScreenF(true, false, COLOR_STD_BG);
-            }
-        } else { // switched command set
-            if ((curr_drvtype & DRV_VIRTUAL) && (pad_state & (BUTTON_X|BUTTON_Y))) {
-                ShowPrompt(false, "Not allowed in virtual path");
-            } else if ((curr_drvtype & DRV_ALIAS) && (pad_state & (BUTTON_X))) {
-                ShowPrompt(false, "Not allowed in alias path");
-            } else if ((pad_state & BUTTON_X) && (curr_entry->type != T_DOTDOT)) { // rename a file
-                char newname[256];
-                char namestr[20+1];
-                TruncateString(namestr, curr_entry->name, 20, 12);
-                snprintf(newname, 255, "%s", curr_entry->name);
-                if (ShowStringPrompt(newname, 256, "Rename %s?\nEnter new name below.", namestr)) {
-                    if (!PathRename(curr_entry->path, newname))
-                        ShowPrompt(false, "Failed renaming path:\n%s", namestr);
-                    else {
-                        GetDirContents(current_dir, current_path);
-                        for (cursor = (current_dir->n_entries) ? current_dir->n_entries - 1 : 0;
-                            (cursor > 1) && (strncmp(current_dir->entry[cursor].name, newname, 256) != 0); cursor--);
-                    }
-                }
-            } else if (pad_state & BUTTON_Y) { // create an entry
-                const char* optionstr[] = { "Create a folder", "Create a dummy file" };
-                u32 type = ShowSelectPrompt(2, optionstr, "Create a new entry here?\nSelect type.");
-                if (type) {
-                    const char* typestr = (type == 1) ? "folder" : (type == 2) ? "file" : NULL;
-                    char ename[256];
-                    u64 fsize = 0;
-                    snprintf(ename, 255, (type == 1) ? "newdir" : "dummy.bin");
-                    if ((ShowStringPrompt(ename, 256, "Create a new %s here?\nEnter name below.", typestr)) &&
-                        ((type != 2) || ((fsize = ShowNumberPrompt(0, "Create a new %s here?\nEnter file size below.", typestr)) != (u64) -1))) {
-                        if (((type == 1) && !DirCreate(current_path, ename)) ||
-                            ((type == 2) && !FileCreateDummy(current_path, ename, fsize))) {
-                            char namestr[36+1];
-                            TruncateString(namestr, ename, 36, 12);
-                            ShowPrompt(false, "Failed creating %s:\n%s", typestr, namestr);
-                        } else {
-                            GetDirContents(current_dir, current_path);
-                            for (cursor = (current_dir->n_entries) ? current_dir->n_entries - 1 : 0;
-                                (cursor > 1) && (strncmp(current_dir->entry[cursor].name, ename, 256) != 0); cursor--);
-                        }
-                    }
-                }
-            }
-        }
-        
-        if (pad_state & BUTTON_START) {
-            return (switched || HID_STATE & BUTTON_LEFT) ? GODMODE_EXIT_POWEROFF : GODMODE_EXIT_REBOOT;
-        } else if (pad_state & (BUTTON_HOME|BUTTON_POWER)) { // Home menu
-            const char* optionstr[8];
-            const char* buttonstr = (pad_state & BUTTON_HOME) ? "HOME" : "POWER";
-            u32 n_opt = 0;
-            int poweroff = ++n_opt;
-            int reboot = ++n_opt;
-            int scripts = (isScriptRunning() || isBGOperationRunning()) ? 0 : ++n_opt;
-            int payloads = ++n_opt;
-            int more = ++n_opt;
-            if (poweroff > 0) optionstr[poweroff - 1] = "Poweroff system";
-            if (reboot > 0) optionstr[reboot - 1] = "Reboot system";
-            if (scripts > 0) optionstr[scripts - 1] = "Scripts...";
-            if (payloads > 0) optionstr[payloads - 1] = "Payloads...";
-            if (more > 0) optionstr[more - 1] = "More...";
-            
-            int user_select = 0;
-            while ((user_select = ShowSelectPrompt(n_opt, optionstr, "%s button pressed.\nSelect action:", buttonstr)) &&
-                (user_select != poweroff) && (user_select != reboot)) {
-                char loadpath[256];
-                if ((user_select == more) && (HomeMoreMenu(current_path) == 0)) break; // more... menu
-                else if (user_select == scripts) {
-                    if (!CheckSupportDir(SCRIPTS_DIR)) {
-                        ShowPrompt(false, "Scripts directory not found.\n(default path: 0:/gm9/" SCRIPTS_DIR ")");
-                    } else if (FileSelectorSupport(loadpath, "HOME scripts... menu.\nSelect script:", SCRIPTS_DIR, "*.gm9")) {
-                        ExecuteGM9Script(loadpath);
-                        GetDirContents(current_dir, current_path);
-                        ClearScreenF(true, true, COLOR_STD_BG);
-                        break;
-                    }
-                } else if (user_select == payloads) {
-                    if ((isScriptRunning() || isBGOperationRunning()) && !ShowPrompt(true, "A background process is running!!\nLoading a payload will terminate it.\nDo you want to continue?")) continue;
-                    if (!CheckSupportDir(PAYLOADS_DIR)) ShowPrompt(false, "Payloads directory not found.\n(default path: 0:/gm9/" PAYLOADS_DIR ")");
-                    else if (FileSelectorSupport(loadpath, "HOME payloads... menu.\nSelect payload:", PAYLOADS_DIR, "*.firm")) {
-                        BootFirmHandler(loadpath, false, false);
-                    }
-                }
-            }
-            
-            if (user_select == poweroff)
-                return GODMODE_EXIT_POWEROFF;
-            else if (user_select == reboot)
-                return GODMODE_EXIT_REBOOT;
-        } else if (pad_state & (CART_INSERT|CART_EJECT)) {
-            if (!InitVCartDrive() && (pad_state & CART_INSERT)) // reinit virtual cart drive
-                ShowPrompt(false, "Cart init failed!");
-            if (!(*current_path) || (curr_drvtype & DRV_CART))
-                GetDirContents(current_dir, current_path); // refresh dir contents
-        } else if (pad_state & SD_INSERT) {
-            while (!InitSDCardFS() && ShowPrompt(true, "Initialising SD card failed! Retry?"));
-            ClearScreenF(true, true, COLOR_STD_BG);
-            AutoEmuNandBase(true);
-            InitExtFS();
-            GetDirContents(current_dir, current_path);
-        } else if ((pad_state & SD_EJECT) && CheckSDMountState()) {
-            ShowPrompt(false, "!Unexpected SD card removal!\n \nTo prevent data loss, unmount\nbefore ejecting the SD card.");
-            DeinitExtFS();
-            DeinitSDCardFS();
-            InitExtFS();
-            if (clipboard->n_entries && (DriveType(clipboard->entry[0].path) &
-                (DRV_SDCARD|DRV_ALIAS|DRV_EMUNAND|DRV_IMAGE)))
-                clipboard->n_entries = 0; // remove SD clipboard entries
-            GetDirContents(current_dir, current_path);
-        }
-        
-        // check and draw ui here
-        if (isBG) {
-            // basic sanity checking
-            if (!current_dir->n_entries) { // current dir is empty -> revert to root
-                ShowPrompt(false, "Invalid directory object");
-                *current_path = '\0';
-                DeinitExtFS(); // deinit and...
-                InitExtFS(); // reinitialize extended file system
-                GetDirContents(current_dir, current_path);
-                cursor = 0;
-                if (!current_dir->n_entries) { // should not happen, if it does fail gracefully
-                    ShowPrompt(false, "Invalid root directory.");
-                    return GODMODE_EXIT_REBOOT;
-                }
-            }
-            if (cursor >= current_dir->n_entries) // cursor beyond allowed range
-                cursor = current_dir->n_entries - 1;
-            curr_entry = &(current_dir->entry[cursor]);
-            
-            if ((mark_next >= 0) && (curr_entry->type != T_DOTDOT)) {
-                curr_entry->marked = mark_next;
-                mark_next = -2;
-            }
-            DrawDirContents(current_dir, cursor, &scroll);
-            DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
-            DrawTopBar(current_path);
-        }
+        DrawDirContents(current_dir, cursor, &scroll);
+        DrawUserInterface(current_path, curr_entry, N_PANES ? pane - panedata + 1 : 0);
+        DrawTopBar(current_path);
+    }
     return GODMODE_NO_EXIT;
 }
 
@@ -2615,11 +2640,11 @@ u32 ScriptRunner(int entrypoint) {
     
     if (PathExist("V:/" VRAM0_AUTORUN_GM9)) {
         ClearScreenF(true, true, COLOR_STD_BG); // clear splash
-        ExecuteGM9Script("V:/" VRAM0_AUTORUN_GM9);
+        StartScript("V:/" VRAM0_AUTORUN_GM9);
     } else if (PathExist("V:/" VRAM0_SCRIPTS)) {
         char loadpath[256];
         if (FileSelector(loadpath, FLAVOR " scripts menu.\nSelect script:", "V:/" VRAM0_SCRIPTS, "*.gm9", HIDE_EXT))
-            ExecuteGM9Script(loadpath);
+            StartScript(loadpath);
     } else ShowPrompt(false, "Compiled as script autorunner\nbut no script provided.\n \nDerp!");
     
     // deinit

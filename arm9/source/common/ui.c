@@ -444,7 +444,7 @@ bool ShowPrompt(bool ask, const char *format, ...)
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     
     return ret;
 }
@@ -597,7 +597,7 @@ u32 ShowSelectPrompt(u32 n, const char** options, const char *format, ...) {
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     
     return (sel >= n) ? 0 : sel + 1;
 }
@@ -777,7 +777,7 @@ bool ShowInputPrompt(char* inputstr, u32 max_size, u32 resize, const char* alpha
         (*cc == ' ') && (cc > inputstr); *(cc--) = '\0');
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     
     return ret;
 }
@@ -791,7 +791,7 @@ bool ShowStringPrompt(char* inputstr, u32 max_size, const char *format, ...) {
     ret = ShowInputPrompt(inputstr, max_size, 1, alphabet, format, va);
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -810,7 +810,7 @@ u64 ShowHexPrompt(u64 start_val, u32 n_digits, const char *format, ...) {
     } else ret = (u64) -1;
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -828,7 +828,7 @@ u64 ShowNumberPrompt(u64 start_val, const char *format, ...) {
     } else ret = (u64) -1;
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -856,7 +856,7 @@ bool ShowDataPrompt(u8* data, u32* size, const char *format, ...) {
     }
     va_end(va);
     
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     return ret; 
 }
 
@@ -926,7 +926,7 @@ bool ShowRtcSetterPrompt(void* time, const char *format, ...) {
     }
     
     ClearScreenF(true, false, COLOR_STD_BG);
-    if (isMTmodEnabled()) InputCheck(true, false, false);
+    if (IsMTmodEnabled()) InputCheck(true, false, false);
     
     return ret;
 }
@@ -987,7 +987,7 @@ bool ShowProgress_org(u64 current, u64 total, const char* opstr)
 bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
 {
     if (current == 0 && total == 0) {
-        setBGOperationRunning(true);
+        StartTask();
         GodMode_redraw(); // screen may has been cleared, so redraw
     }
     static u32 last_prog_width = 0;
@@ -1021,13 +1021,13 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     if (!current || last_prog_width > prog_width)
         DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, bar_width, bar_height, COLOR_STD_BG); // clear the bar
 
-    bool screen_cleared = (*BOT_SCREEN != 0xFF); // the left/bottom pixel is not white -> screen has been cleared
+    bool screen_cleared = (*MAIN_SCREEN != 0xFF); // the left/bottom pixel is not white -> screen has been cleared
     if (prog_width && screen_cleared) // draw the bar fully
         DrawRectangle(MAIN_SCREEN, bar_pos_x, bar_pos_y, prog_width, bar_height, COLOR_STD_FONT);
     else if (prog_width > last_prog_width) // draw only the bar added from previous drawing
         DrawRectangle(MAIN_SCREEN, last_prog_width, bar_pos_y, prog_width - last_prog_width, bar_height, COLOR_STD_FONT);
     
-    if (prog_width > last_prog_width || screen_cleared) { // update them only if the width is changed
+    if (prog_width > last_prog_width || screen_cleared) { // update them only if the bar extends
         TruncateString(progstr, opstr, (bar_width / FONT_WIDTH_EXT) - 7, 8);
         snprintf(tempstr, 64, "%s (%lu%%)", progstr, prog_percent);
         ResizeString(progstr, tempstr, bar_width / FONT_WIDTH_EXT, 8, false);
@@ -1043,7 +1043,7 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
     
     // operation string
     if (screen_cleared) {
-        char* operation_str = getCurrentOperationStr();
+        const char* operation_str = GetCurrentTaskStr();
         if (operation_str) DrawString(MAIN_SCREEN, operation_str, bar_pos_x, text_pos_y - FONT_HEIGHT_EXT, COLOR_STD_FONT, COLOR_STD_BG, false);
     }
     
@@ -1065,12 +1065,12 @@ bool ShowProgress_mt(u64 current, u64 total, const char* opstr)
         (exit_mode == GODMODE_EXIT_POWEROFF) ? "shutdown" : "reboot")) (exit_mode == GODMODE_EXIT_POWEROFF) ? PowerOff() : Reboot();
     last_file_msec = time_cur;
     
-    if (current == 1 && total == 1) setBGOperationRunning(false);
-    return !(HID_STATE & BUTTON_R1 && HID_STATE & BUTTON_SELECT);
+    if (current == 1 && total == 1) FinishTask();
+    return !((HID_STATE & BUTTON_R1) && (HID_STATE & BUTTON_SELECT));
 }
 
 // Multi thread enable/disable
 inline bool ShowProgress(u64 current, u64 total, const char* opstr) {
-    if (isMTmodEnabled()) return ShowProgress_mt(current, total, opstr);
+    if (IsMTmodEnabled()) return ShowProgress_mt(current, total, opstr);
     else return ShowProgress_org(current, total, opstr);
 }

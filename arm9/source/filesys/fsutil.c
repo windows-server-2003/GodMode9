@@ -18,7 +18,7 @@
 
 #define _MAX_FS_OPT     8 // max file selector options
 
-#define FS_BUFFER_SIZE (isMTmodEnabled() ? 0x4000 : STD_BUFFER_SIZE)
+#define FS_BUFFER_SIZE (IsMTmodEnabled() ? 0x4000 : STD_BUFFER_SIZE)
 
 // Volume2Partition resolution table
 PARTITION VolToPart[] = {
@@ -159,7 +159,7 @@ size_t FileGetSize(const char* path) {
 }
 
 bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
-    setCurrentOperationId(OPERATION_VERIFY);
+    SetCurrentTaskStr("Calculating sha256");
     bool ret = true;
     FIL file;
     u64 fsize;
@@ -198,7 +198,7 @@ bool FileGetSha256(const char* path, u8* sha256, u64 offset, u64 size) {
 }
 
 u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
-    setCurrentOperationId(OPERATION_FIND);
+    SetCurrentTaskStr("Searching data");
     FIL file; // used for FAT & virtual
     u64 found = (u64) -1;
     u64 fsize = FileGetSize(path);
@@ -243,7 +243,7 @@ u32 FileFindData(const char* path, u8* data, u32 size_data, u32 offset_file) {
 }
 
 bool FileInjectFile(const char* dest, const char* orig, u64 off_dest, u64 off_orig, u64 size, u32* flags) {
-    setCurrentOperationId(OPERATION_INJECT);
+    SetCurrentTaskStr("Injecting file");
     FIL ofile;
     FIL dfile;
     bool allow_expand = (flags && (*flags & ALLOW_EXPAND));
@@ -296,7 +296,7 @@ bool FileInjectFile(const char* dest, const char* orig, u64 off_dest, u64 off_or
         if (ret && !ShowProgress(pos + bytes_read, size, orig)) {
             if (flags && (*flags & NO_CANCEL)) {
                 ShowPrompt(false, "Cancel is not allowed here");
-            } else ret = !ShowPrompt(true, "B button detected. Cancel?");
+            } else ret = !MTmodCancelConfirm(NULL);
             ShowProgress(0, 0, orig);
             ShowProgress(pos + bytes_read, size, orig);
         }
@@ -311,7 +311,7 @@ bool FileInjectFile(const char* dest, const char* orig, u64 off_dest, u64 off_or
 }
 
 bool FileSetByte(const char* dest, u64 offset, u64 size, u8 fillbyte, u32* flags) {
-    setCurrentOperationId(OPERATION_FILL);
+    SetCurrentTaskStr("Filling file");
     FIL dfile;
     bool allow_expand = (flags && (*flags & ALLOW_EXPAND));
     
@@ -347,7 +347,7 @@ bool FileSetByte(const char* dest, u64 offset, u64 size, u8 fillbyte, u32* flags
         if (ret && !ShowProgress(pos + bytes_written, size, dest)) {
             if (flags && (*flags & NO_CANCEL)) {
                 ShowPrompt(false, "Cancel is not allowed here");
-            } else ret = !ShowPrompt(true, "B button detected. Cancel?");
+            } else ret = !MTmodCancelConfirm(NULL);
             ShowProgress(0, 0, dest);
             ShowProgress(pos + bytes_written, size, dest);
         }
@@ -444,7 +444,7 @@ bool PathExist(const char* path) {
 }
 
 bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, u32 bufsiz) {
-    if (!move) setCurrentOperationId(OPERATION_COPY);
+    if (!move) SetCurrentTaskStr("Copying");
     bool to_virtual = GetVirtualSource(dest);
     bool silent = (flags && (*flags & SILENT));
     bool ret = false;
@@ -467,7 +467,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, 
     
     // the copy process takes place here
     if (!ShowProgress(0, 0, orig) && !(flags && (*flags & NO_CANCEL))) {
-        if (ShowPrompt(true, "%s\nB button detected. Cancel?", deststr)) return false;
+        if (MTmodCancelConfirm(deststr)) return false;
         ShowProgress(0, 0, orig);
     }
     if (move && fvx_stat(dest, NULL) != FR_OK) { // moving if dest not existing
@@ -557,7 +557,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, 
             if (ret && !ShowProgress(pos + bytes_read, fsize, orig)) {
                 if (flags && (*flags & NO_CANCEL)) {
                     ShowPrompt(false, "%s\nCancel is not allowed here", deststr);
-                } else ret = !ShowPrompt(true, "%s\nB button detected. Cancel?", deststr);
+                } else ret = !MTmodCancelConfirm(deststr);
                 ShowProgress(0, 0, orig);
                 ShowProgress(pos + bytes_read, fsize, orig);
             }
@@ -668,11 +668,11 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         }
         
         // actual move / copy operation
-        setBGOperationRunning(true);
+        StartTask();
         bool same_drv = (strncasecmp(lorig, ldest, 2) == 0);
         bool res = PathMoveCopyRec(ldest, lorig, flags, move && same_drv, buffer, FS_BUFFER_SIZE);
         if (move && res && (!flags || !(*flags&SKIP_CUR))) PathDelete(lorig);
-        setBGOperationRunning(false);
+        FinishTask();
         
         free(buffer);
         return res;
@@ -709,11 +709,11 @@ bool PathMoveCopy(const char* dest, const char* orig, u32* flags, bool move) {
         }
         
         // actual virtual copy operation
-        setBGOperationRunning(true);
+        StartTask();
         if (force_unmount) DismountDriveType(DriveType(ldest)&(DRV_SYSNAND|DRV_EMUNAND|DRV_IMAGE));
         bool res = PathMoveCopyRec(ldest, lorig, flags, false, buffer, FS_BUFFER_SIZE);
         if (force_unmount) InitExtFS();
-        setBGOperationRunning(false);
+        FinishTask();
         
         free(buffer);
         return res;

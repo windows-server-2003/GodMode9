@@ -193,22 +193,28 @@ Gm9ScriptCmd cmd_list[] = {
     { CMD_ID_BKPT    , "bkpt"    , 0, 0 }
 };
 
-// global vars for preview
-static u32 preview_mode = 0; // 0 -> off 1 -> quick 2 -> full
-static u32 script_color_active = 0;
-static u32 script_color_comment = 0;
-static u32 script_color_code = 0;
+typedef struct {
+    // global vars for preview
+    u32 preview_mode; // 0 -> off 1 -> quick 2 -> full
+    u32 script_color_active;
+    u32 script_color_comment;
+    u32 script_color_code;
+    
+    // global vars for control flow
+    bool syntax_error;   // if true, severe error, script has to stop
+    char* jump_ptr;       // next position after a jump
+    char* for_ptr;        // position of the active 'for' command
+    u32 skip_state;          // zero, _SKIP_BLOCK, _SKIP_TILL_END
+    u32 ifcnt;               // current # of 'if' nesting
 
-// global vars for control flow
-static bool syntax_error = false;   // if true, severe error, script has to stop
-static char* jump_ptr = NULL;       // next position after a jump
-static char* for_ptr = NULL;        // position of the active 'for' command
-static u32 skip_state = 0;          // zero, _SKIP_BLOCK, _SKIP_TILL_END
-static u32 ifcnt = 0;               // current # of 'if' nesting
+    // script / var buffers
+    void* script_buffer;
+    void* var_buffer;
+} Globals;
 
-// script / var buffers
-static void* script_buffer = NULL;
-static void* var_buffer = NULL;
+Globals globals[MAX_SCRIPTS] = { 0 };
+int global_cur = -1;
+#define GLOBAL globals[global_cur]
 
 
 static inline bool isntrboot(void) {
@@ -331,26 +337,26 @@ static inline u32 get_lno(const char* text, u32 len, const char* line) {
 
 void set_preview(const char* name, const char* content) {
     if (strncmp(name, "PREVIEW_MODE", _VAR_NAME_LEN) == 0) {
-        if (strncasecmp(content, "quick", _VAR_CNT_LEN) == 0) preview_mode = 1;
-        else if (strncasecmp(content, "full", _VAR_CNT_LEN) == 0) preview_mode = 2;
-        else preview_mode = 0xFF; // unknown preview mode
+        if (strncasecmp(content, "quick", _VAR_CNT_LEN) == 0) GLOBAL.preview_mode = 1;
+        else if (strncasecmp(content, "full", _VAR_CNT_LEN) == 0) GLOBAL.preview_mode = 2;
+        else GLOBAL.preview_mode = 0xFF; // unknown preview mode
     } else if (strncmp(name, "PREVIEW_COLOR_ACTIVE", _VAR_NAME_LEN) == 0) {
         u8 rgb[4] = { 0 };
         if (strntohex(content, rgb, 3))
-            script_color_active = getle32(rgb);
+            GLOBAL.script_color_active = getle32(rgb);
     } else if (strncmp(name, "PREVIEW_COLOR_COMMENT", _VAR_NAME_LEN) == 0) {
         u8 rgb[4] = { 0 };
         if (strntohex(content, rgb, 3))
-            script_color_comment = getle32(rgb);
+            GLOBAL.script_color_comment = getle32(rgb);
     } else if (strncmp(name, "PREVIEW_COLOR_CODE", _VAR_NAME_LEN) == 0) {
         u8 rgb[4] = { 0 };
         if (strntohex(content, rgb, 3))
-            script_color_code = getle32(rgb);
+            GLOBAL.script_color_code = getle32(rgb);
     }
 }
 
 char* set_var(const char* name, const char* content) {
-    Gm9ScriptVar* vars = (Gm9ScriptVar*) var_buffer;
+    Gm9ScriptVar* vars = (Gm9ScriptVar*) GLOBAL.var_buffer;
     
     if ((strnlen(name, _VAR_NAME_LEN) > (_VAR_NAME_LEN-1)) || (strnlen(content, _VAR_CNT_LEN) > (_VAR_CNT_LEN-1)) ||
         (strchr(name, '[') || strchr(name, ']')))
@@ -422,7 +428,7 @@ void upd_var(const char* name) {
 }
 
 char* get_var(const char* name, char** endptr) {
-    Gm9ScriptVar* vars = (Gm9ScriptVar*) var_buffer;
+    Gm9ScriptVar* vars = (Gm9ScriptVar*) GLOBAL.var_buffer;
     
     u32 name_len = 0;
     char* pname = NULL;
@@ -454,7 +460,7 @@ char* get_var(const char* name, char** endptr) {
 
 bool init_vars(const char* path_script) {
     // reset var buffer
-    memset(var_buffer, 0x00, sizeof(Gm9ScriptVar) * _VAR_MAX_BUFF);
+    memset(GLOBAL.var_buffer, 0x00, sizeof(Gm9ScriptVar) * _VAR_MAX_BUFF);
     
     // current path
     char curr_dir[_VAR_CNT_LEN];
@@ -659,7 +665,7 @@ char* find_next(char* ptr) {
 }
 
 char* find_label(const char* label, const char* last_found) {
-    char* script = (char*) script_buffer;
+    char* script = (char*) GLOBAL.script_buffer;
     char* ptr = script;
     u32 label_len = strnlen(label, _ARG_MAX_LEN);
     
@@ -827,70 +833,70 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
     else if (id == CMD_ID_IF) {
         // check the argument
         // "if true" or "if false"
-        skip_state = (strncmp(argv[0], _ARG_TRUE, _ARG_MAX_LEN) == 0) ? 0 : _SKIP_BLOCK;
-        ifcnt++;
+        GLOBAL.skip_state = (strncmp(argv[0], _ARG_TRUE, _ARG_MAX_LEN) == 0) ? 0 : _SKIP_BLOCK;
+        GLOBAL.ifcnt++;
         
-        if (syntax_error && err_str)
+        if (GLOBAL.syntax_error && err_str)
             snprintf(err_str, _ERR_STR_LEN, "syntax error after 'if'");
-        ret = !syntax_error;
+        ret = !GLOBAL.syntax_error;
     }
     else if (id == CMD_ID_ELIF) {
         // check syntax errors
-        if (ifcnt == 0) {
+        if (GLOBAL.ifcnt == 0) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "'elif' without 'if'");
-            syntax_error = true;
+            GLOBAL.syntax_error = true;
             return false;
         }
         
         // skip state handling, check the argument if required
         // "if true" or "if false"
-        skip_state = !skip_state ? _SKIP_TILL_END :
+        GLOBAL.skip_state = !GLOBAL.skip_state ? _SKIP_TILL_END :
             ((strncmp(argv[0], _ARG_TRUE, _ARG_MAX_LEN) == 0) ? 0 : _SKIP_BLOCK);
         
-        if (syntax_error && err_str)
+        if (GLOBAL.syntax_error && err_str)
             snprintf(err_str, _ERR_STR_LEN, "syntax error after 'elif'");
-        ret = !syntax_error;
+        ret = !GLOBAL.syntax_error;
     }
     else if (id == CMD_ID_ELSE) {
         // check syntax errors
-        if (ifcnt == 0) {
+        if (GLOBAL.ifcnt == 0) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "'else' without 'if'");
-            syntax_error = true;
+            GLOBAL.syntax_error = true;
             return false;
         }
         
         // turn the skip state
-        skip_state = skip_state ? 0 : _SKIP_TILL_END;
+        GLOBAL.skip_state = GLOBAL.skip_state ? 0 : _SKIP_TILL_END;
         
         ret = true;
     }
     else if (id == CMD_ID_END) {
         // check syntax errors
-        if (ifcnt == 0){
+        if (GLOBAL.ifcnt == 0){
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "'end' without 'if'");
-            syntax_error = true;
+            GLOBAL.syntax_error = true;
             return false;
         }
         
         // close last "if"
-        skip_state = 0;
-        ifcnt--;
+        GLOBAL.skip_state = 0;
+        GLOBAL.ifcnt--;
         
         ret = true;
     }
     else if (id == CMD_ID_FOR) {
         // cheating alert(!): actually this does nothing much
         // just sets up the for_handler and skips to 'next'
-        if (for_ptr) {
+        if (GLOBAL.for_ptr) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "'for' inside 'for'");
-            syntax_error = true;
+            GLOBAL.syntax_error = true;
             return false;
         } else if (!for_handler(NULL, argv[0], argv[1], flags & _FLG('r'))) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "dir not found");
-            skip_state = _SKIP_TO_NEXT;
+            GLOBAL.skip_state = _SKIP_TO_NEXT;
             ret = false;
         } else {
-            skip_state = _SKIP_TO_NEXT;
+            GLOBAL.skip_state = _SKIP_TO_NEXT;
             ret = true;
         }
     }
@@ -898,9 +904,9 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         // actual work is done here
         char* var = set_var(_VAR_FORPATH, "");
         ret = true;
-        if (!for_ptr) {
+        if (!GLOBAL.for_ptr) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "'next' without 'for'");
-            syntax_error = true;
+            GLOBAL.syntax_error = true;
             return false;
         } else if (!var) {
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "forpath error");
@@ -909,17 +915,17 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
             if (!for_handler(var, NULL, NULL, false)) *var = '\0';
             if (!*var) {
                 for_handler(NULL, NULL, NULL, false); // finish for_handler
-                for_ptr = NULL;
-                skip_state = 0;
+                GLOBAL.for_ptr = NULL;
+                GLOBAL.skip_state = 0;
             } else {
-                skip_state = _SKIP_TO_FOR;
+                GLOBAL.skip_state = _SKIP_TO_FOR;
             }
             ret = true;
         }
     }
     else if (id == CMD_ID_GOTO) {
-        jump_ptr = find_label(argv[0], NULL);
-        if (!jump_ptr) {
+        GLOBAL.jump_ptr = find_label(argv[0], NULL);
+        if (!GLOBAL.jump_ptr) {
             ret = false;
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "label not found");
         }
@@ -963,7 +969,7 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         if (!result) {
             ret = false;
             if (err_str) snprintf(err_str, _ERR_STR_LEN, "user abort");
-        } else jump_ptr = options_jmp[result-1];
+        } else GLOBAL.jump_ptr = options_jmp[result-1];
     }
     else if (id == CMD_ID_KEYCHK) {
         ret = CheckButton(StringToButton(argv[0]));
@@ -973,21 +979,21 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         ShowPrompt(false, "%s", argv[0]);
     }
     else if (id == CMD_ID_QR) {
-        if (!isMTmodEnabled()) { // ignore if MTmod is enabled
-			const u32 screen_size = SCREEN_SIZE(ALT_SCREEN);
-			u8* screen_copy = (u8*) malloc(screen_size);
-			u8 qrcode[qrcodegen_BUFFER_LEN_MAX];
-			u8 temp[qrcodegen_BUFFER_LEN_MAX];
-			ret = screen_copy && qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
-				qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
-			if (ret) {
-				memcpy(screen_copy, ALT_SCREEN, screen_size);
-				DrawQrCode(ALT_SCREEN, qrcode);
-				ShowPrompt(false, "%s", argv[0]);
-				memcpy(ALT_SCREEN, screen_copy, screen_size);
-			} else if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
-			free(screen_copy);
-		}
+        if (!IsMTmodEnabled()) { // ignore if MTmod is enabled
+            const u32 screen_size = SCREEN_SIZE(ALT_SCREEN);
+            u8* screen_copy = (u8*) malloc(screen_size);
+            u8 qrcode[qrcodegen_BUFFER_LEN_MAX];
+            u8 temp[qrcodegen_BUFFER_LEN_MAX];
+            ret = screen_copy && qrcodegen_encodeText(argv[1], temp, qrcode, qrcodegen_Ecc_LOW,
+                qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
+            if (ret) {
+                memcpy(screen_copy, ALT_SCREEN, screen_size);
+                DrawQrCode(ALT_SCREEN, qrcode);
+                ShowPrompt(false, "%s", argv[0]);
+                memcpy(ALT_SCREEN, screen_copy, screen_size);
+            } else if (err_str) snprintf(err_str, _ERR_STR_LEN, "out of memory");
+            free(screen_copy);
+        }
     }
     else if (id == CMD_ID_ASK) {
         ret = ShowPrompt(true, "%s", argv[0]);
@@ -1401,21 +1407,23 @@ bool run_cmd(cmd_id id, u32 flags, char** argv, char* err_str) {
         InitExtFS();
     }
     else if (id == CMD_ID_REBOOT) {
-        if (!isBGOperationRunning() || ShowPrompt(true, "The script is rebooting the console,\nbut there is a background file operation.\n \nDo you want to reboot?")) {
+        if (!(IsTaskLeft() || GetScriptNum() > 1) ||
+            ShowPrompt(true, "The script is rebooting the console.\nHowever you have background tasks left.\n \nDo you really want to reboot?")) {
             DeinitExtFS();
             DeinitSDCardFS();
             Reboot();
         }
     }
     else if (id == CMD_ID_POWEROFF) {
-        if (!isBGOperationRunning() || ShowPrompt(true, "The script is shutting down the console,\nbut there is a background file operation.\n \nDo you want to shutdown?")) {
+        if (!(IsTaskLeft() || GetScriptNum() > 1) ||
+            ShowPrompt(true, "The script is shutting down the console\nHowever you have background tasks left.\n \nDo you really want to shutdown?")) {
             DeinitExtFS();
             DeinitSDCardFS();
             PowerOff();
         }
     }
     else if (id == CMD_ID_BKPT) {
-        if (!isBGOperationRunning() || ShowPrompt(true, "The script is trying to make an exception,\nbut there is a background file operation.\n \nDo you want to do that?")) {
+        if (!IsTaskLeft() || ShowPrompt(true, "The script is trying to make an exception,\nHowever you have background tasks left.\n \nDo you want to do that?")) {
             bkpt;
             while(1);
         }
@@ -1446,7 +1454,7 @@ bool run_line(const char* line_start, const char* line_end, u32* flags, char* er
     
     // parse current line, grab cmd / flags / args
     if (!parse_line(line_start, line_end, &cmdid, flags, &argc, argv, err_str)) {
-        syntax_error = true;
+        GLOBAL.syntax_error = true;
         return false;
     }
     
@@ -1454,13 +1462,13 @@ bool run_line(const char* line_start, const char* line_end, u32* flags, char* er
     // block out of control flow commands
     if (if_cond && IS_CTRLFLOW_CMD(cmdid)) {
         if (err_str) snprintf(err_str, _ERR_STR_LEN, "control flow error");
-        syntax_error = true;
+        GLOBAL.syntax_error = true;
         return false;
     }
         
     // shortcuts for "elif" / "else"
-    if (((cmdid == CMD_ID_ELIF) || (cmdid == CMD_ID_ELSE)) && !skip_state) {
-        skip_state = _SKIP_TILL_END;
+    if (((cmdid == CMD_ID_ELIF) || (cmdid == CMD_ID_ELSE)) && !GLOBAL.skip_state) {
+        GLOBAL.skip_state = _SKIP_TILL_END;
         cmdid = 0;
     }
     
@@ -1527,14 +1535,14 @@ void MemTextView(const char* text, u32 len, char* line0, int off_disp, int lno, 
         bool ar = !ww && (llen > off_disp + TV_LLEN_DISP);
         
         // set text color / find start of comment of scripts
-        u32 color_text = (nln == mno) ? script_color_active : (is_script) ? script_color_code : (u32) COLOR_TVTEXT;
+        u32 color_text = (nln == mno) ? GLOBAL.script_color_active : (is_script) ? GLOBAL.script_color_code : (u32) COLOR_TVTEXT;
         int cmt_start = TV_LLEN_DISP; // start of comment in current displayed line (may be negative)
         if (is_script && (nln != mno)) {
             char* hash = line_seek(text, len, 0, ptr, 0);
             for (; *hash != '#' && (hash - ptr < (int) llen); hash++);
             cmt_start = (hash - ptr) - off_disp;
         }
-        if (cmt_start <= 0) color_text = script_color_comment;
+        if (cmt_start <= 0) color_text = GLOBAL.script_color_comment;
         
         // build text string
         snprintf(txtstr, TV_LLEN_DISP + 1, "%-*.*s", (int) TV_LLEN_DISP, (int) TV_LLEN_DISP, "");
@@ -1554,7 +1562,7 @@ void MemTextView(const char* text, u32 len, char* line0, int off_disp, int lno, 
         // colorize comment if is_script
         if ((cmt_start > 0) && ((u32) cmt_start < TV_LLEN_DISP)) {
             memset(txtstr, ' ', cmt_start);
-            DrawString(TOP_SCREEN, txtstr, x_txt, y, script_color_comment, COLOR_TRANSPARENT, false);
+            DrawString(TOP_SCREEN, txtstr, x_txt, y, GLOBAL.script_color_comment, COLOR_TRANSPARENT, false);
         }
         
         // colorize arrows
@@ -1585,9 +1593,9 @@ bool MemTextViewer(const char* text, u32 len, u32 start, bool as_script) {
     
     // set script colors
     if (as_script) {
-        script_color_active = COLOR_TVRUN;
-        script_color_comment = COLOR_TVCMT;
-        script_color_code = COLOR_TVCMD;
+        GLOBAL.script_color_active = COLOR_TVRUN;
+        GLOBAL.script_color_comment = COLOR_TVCMT;
+        GLOBAL.script_color_code = COLOR_TVCMD;
     }
     
     // find maximum line len
@@ -1741,38 +1749,35 @@ bool FileTextViewer(const char* path, bool as_script) {
 }
 
 bool ExecuteGM9Script(const char* path_script) {
-    setScriptRunning(true);
     char path_str[32+1];
     TruncateString(path_str, path_script, 32, 12);
     
-    // reset control flow global vars
-    ifcnt = 0;
-    jump_ptr = NULL;
-    for_ptr = NULL;
-    skip_state = 0;
-    syntax_error = false;
-    
+    if(global_cur >= MAX_SCRIPTS-1) {
+        ShowPrompt(false, "MTmod Fatal :\ntoo many scripts.");
+        bkpt;
+    }
+    globals[++global_cur] = (Globals){ 0 };
     
     // allocate && check memory
-    var_buffer = (void*) malloc(sizeof(Gm9ScriptVar) * _VAR_MAX_BUFF);
-    script_buffer = (void*) malloc(SCRIPT_MAX_SIZE);
-    char* script = (char*) script_buffer;
+    GLOBAL.var_buffer = (void*) malloc(sizeof(Gm9ScriptVar) * _VAR_MAX_BUFF);
+    GLOBAL.script_buffer = (void*) malloc(SCRIPT_MAX_SIZE);
+    char* script = (char*) GLOBAL.script_buffer;
     char* ptr = script;
     
-    if (!var_buffer || !script_buffer) {
-        if (var_buffer) free(var_buffer);
-        if (script_buffer) free(script_buffer);
+    if (!GLOBAL.var_buffer || !GLOBAL.script_buffer) {
+        if (GLOBAL.var_buffer) free(GLOBAL.var_buffer);
+        if (GLOBAL.script_buffer) free(GLOBAL.script_buffer);
         ShowPrompt(false, "Out of memory.");
-        setScriptRunning(false);
+        global_cur--;
         return false;
     }
     
     // fetch script from path
     u32 script_size = FileGetData(path_script, (u8*) script, SCRIPT_MAX_SIZE, 0);
     if (!script_size || (script_size >= SCRIPT_MAX_SIZE)) {
-        free(var_buffer);
-        free(script_buffer);
-        setScriptRunning(false);
+        free(GLOBAL.var_buffer);
+        free(GLOBAL.script_buffer);
+        global_cur--;
         return false;
     }
     
@@ -1785,11 +1790,11 @@ bool ExecuteGM9Script(const char* path_script) {
     // setup script preview (only if used)
     u32 preview_mode_local = 0;
     if (MAIN_SCREEN != TOP_SCREEN) {
-        if (!isMTmodEnabled()) ClearScreen(TOP_SCREEN, COLOR_STD_BG);
-        preview_mode = 2; // 0 -> off 1 -> quick 2 -> full
-        script_color_active = COLOR_TVRUN;
-        script_color_comment = COLOR_TVCMT;
-        script_color_code = COLOR_TVCMD;
+        if (!IsMTmodEnabled()) ClearScreen(TOP_SCREEN, COLOR_STD_BG);
+        GLOBAL.preview_mode = 2; // 0 -> off 1 -> quick 2 -> full
+        GLOBAL.script_color_active = COLOR_TVRUN;
+        GLOBAL.script_color_comment = COLOR_TVCMT;
+        GLOBAL.script_color_code = COLOR_TVCMD;
     }
     
     // script execute loop
@@ -1803,11 +1808,11 @@ bool ExecuteGM9Script(const char* path_script) {
         if (!line_end) line_end = ptr + strlen(ptr);
 
         // update script viewer
-        if (MAIN_SCREEN != TOP_SCREEN && !isMTmodEnabled()) {
-            if (preview_mode != preview_mode_local) {
-                if (!preview_mode || (preview_mode > 2) || !preview_mode_local)
+        if (MAIN_SCREEN != TOP_SCREEN && !IsMTmodEnabled()) {
+            if (GLOBAL.preview_mode != preview_mode_local) {
+                if (!GLOBAL.preview_mode || (GLOBAL.preview_mode > 2) || !preview_mode_local)
                     ClearScreen(TOP_SCREEN, COLOR_STD_BG);
-                if (preview_mode > 2) {
+                if (GLOBAL.preview_mode > 2) {
                     char* preview_str = get_var("PREVIEW_MODE", NULL);
                     u32 bitmap_width, bitmap_height;
                     u8* bitmap = NULL;
@@ -1828,13 +1833,13 @@ bool ExecuteGM9Script(const char* path_script) {
                         DrawStringCenter(TOP_SCREEN, COLOR_STD_FONT, COLOR_STD_BG, "%s", preview_str);
                     }
 
-                    preview_mode = 0;
+                    GLOBAL.preview_mode = 0;
                 }
-                preview_mode_local = preview_mode;
+                preview_mode_local = GLOBAL.preview_mode;
             }
 
-            bool show_preview = preview_mode;
-            if (preview_mode == 1) {
+            bool show_preview = GLOBAL.preview_mode;
+            if (GLOBAL.preview_mode == 1) {
                 show_preview = false;
                 for (char* c = ptr; (c < line_end) && !show_preview; c++) {
                     // check for comments / labels
@@ -1861,34 +1866,34 @@ bool ExecuteGM9Script(const char* path_script) {
         
         // skip state handling
         char* skip_ptr = ptr;
-        if ((skip_state == _SKIP_BLOCK) || (skip_state == _SKIP_TILL_END)) {
-            skip_ptr = skip_block(line_end + 1, (skip_state == _SKIP_TILL_END), false);
+        if ((GLOBAL.skip_state == _SKIP_BLOCK) || (GLOBAL.skip_state == _SKIP_TILL_END)) {
+            skip_ptr = skip_block(line_end + 1, (GLOBAL.skip_state == _SKIP_TILL_END), false);
             if (!skip_ptr) {
                 snprintf(err_str, _ERR_STR_LEN, "unclosed conditional");
                 result = false;
-                syntax_error = true;
+                GLOBAL.syntax_error = true;
             }
-        } else if (skip_state == _SKIP_TO_NEXT) {
+        } else if (GLOBAL.skip_state == _SKIP_TO_NEXT) {
             skip_ptr = find_next(ptr);
             if (!skip_ptr) {
                 snprintf(err_str, _ERR_STR_LEN, "'for' without 'next'");
                 result = false;
-                syntax_error = true;
+                GLOBAL.syntax_error = true;
             }
-            for_ptr = (char*) line_end + 1;
-        } else if (skip_state == _SKIP_TO_FOR) {
-            skip_ptr = for_ptr;
+            GLOBAL.for_ptr = (char*) line_end + 1;
+        } else if (GLOBAL.skip_state == _SKIP_TO_FOR) {
+            skip_ptr = GLOBAL.for_ptr;
             if (!skip_ptr) {
                 snprintf(err_str, _ERR_STR_LEN, "'next' without 'for'");
                 result = false;
-                syntax_error = true;
+                GLOBAL.syntax_error = true;
             }
-            skip_state = 0;
+            GLOBAL.skip_state = 0;
         }
         
         
         if (!result) { // error handling
-            if (syntax_error) // severe error, can't continue
+            if (GLOBAL.syntax_error) // severe error, can't continue
                 flags &= ~(_FLG('o')|_FLG('s')); // never silent or optional
             
             if (!(flags & _FLG('s'))) { // not silent
@@ -1918,12 +1923,12 @@ bool ExecuteGM9Script(const char* path_script) {
         if (skip_ptr != ptr) {
             ptr = skip_ptr;
             lno = get_lno(script, script_size, ptr);
-        } else if (jump_ptr) {
-            ptr = jump_ptr;
+        } else if (GLOBAL.jump_ptr) {
+            ptr = GLOBAL.jump_ptr;
             lno = get_lno(script, script_size, ptr);
-            ifcnt = 0; // jumping into conditional block is unexpected/unsupported
-            jump_ptr = NULL;
-            for_ptr = NULL;
+            GLOBAL.ifcnt = 0; // jumping into conditional block is unexpected/unsupported
+            GLOBAL.jump_ptr = NULL;
+            GLOBAL.for_ptr = NULL;
             for_handler(NULL, NULL, NULL, false);
         } else {
             ptr = line_end + 1;
@@ -1933,11 +1938,11 @@ bool ExecuteGM9Script(const char* path_script) {
     
     
     if (result) { // all fine(?) up to this point
-        if (ifcnt) { // check for unresolved 'if'
+        if (GLOBAL.ifcnt) { // check for unresolved 'if'
             ShowPrompt(false, "%s\nend of script: unresolved 'if'", path_str);
             result = false;
         }
-        if (for_ptr) { // check for unresolved 'for'
+        if (GLOBAL.for_ptr) { // check for unresolved 'for'
             ShowPrompt(false, "%s\nend of script: unresolved 'for'", path_str);
             for_handler(NULL, NULL, NULL, false);
             result = false;
@@ -1950,8 +1955,8 @@ bool ExecuteGM9Script(const char* path_script) {
     }
     
     
-    free(var_buffer);
-    free(script_buffer);
-    setScriptRunning(false);
+    free(GLOBAL.var_buffer);
+    free(GLOBAL.script_buffer);
+    global_cur--;
     return result;
 }

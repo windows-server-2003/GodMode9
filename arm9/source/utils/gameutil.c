@@ -13,7 +13,7 @@
 #define CRYPTO_DECRYPT  NCCH_NOCRYPTO
 #define CRYPTO_ENCRYPT  NCCH_STDCRYPTO
 
-#define FS_BUFFER_SIZE (isMTmodEnabled() ? 0x4000 : STD_BUFFER_SIZE)
+#define FS_BUFFER_SIZE (IsMTmodEnabled() ? 0x4000 : STD_BUFFER_SIZE)
 
 u32 GetNcchHeaders(NcchHeader* ncch, NcchExtHeader* exthdr, ExeFsHeader* exefs, FIL* file) {
     u32 offset_ncch = fvx_tell(file);
@@ -629,8 +629,8 @@ u32 VerifyBossFile(const char* path) {
 }
 
 u32 VerifyGameFile(const char* path) {
-	setBGOperationRunning(true);
-	setCurrentOperationId(OPERATION_VERIFY);
+	StartTask();
+	SetCurrentTaskStr("Verifying file");
     u64 filetype = IdentifyFileType(path);
     if (filetype & GAME_CIA)
         return VerifyCiaFile(path);
@@ -645,7 +645,7 @@ u32 VerifyGameFile(const char* path) {
     else if (filetype & SYS_FIRM)
         return VerifyFirmFile(path);
     else return 1;
-	setBGOperationRunning(false);
+	FinishTask();
 }
 
 u32 CheckEncryptedNcchFile(const char* path, u32 offset) {
@@ -1055,8 +1055,8 @@ u32 CryptGameFile(const char* path, bool inplace, bool encrypt) {
             return 1;
     }
     
-	setBGOperationRunning(true);
-	setCurrentOperationId(encrypt ? OPERATION_ENCRYPT : OPERATION_DECRYPT);
+	StartTask();
+	SetCurrentTaskStr(encrypt ? "Encrypting" : "Decrypting");
     if (filetype & GAME_CIA)
         ret = CryptCiaFile(path, destptr, crypto);
     else if (filetype & GAME_NUSCDN)
@@ -1066,7 +1066,7 @@ u32 CryptGameFile(const char* path, bool inplace, bool encrypt) {
     else if (filetype & (GAME_NCCH|GAME_NCSD|GAME_BOSS))
         ret = CryptNcchNcsdBossFirmFile(path, destptr, filetype, crypto, 0, 0, NULL, NULL);
     else ret = 1;
-	setBGOperationRunning(false);
+	FinishTask();
     
     if (!inplace && (ret != 0))
         f_unlink(dest); // try to get rid of the borked file
@@ -1469,8 +1469,8 @@ u32 BuildCiaFromGameFile(const char* path, bool force_legit) {
         return 1;
     
     // build CIA from game file
-	setBGOperationRunning(true);
-	setCurrentOperationId(OPERATION_BUILD);
+	StartTask();
+	SetCurrentTaskStr("Building CIA");
     if (filetype & GAME_TMD)
         ret = BuildCiaFromTmdFile(path, dest, force_legit, filetype & FLAG_NUSCDN);
     else if (filetype & GAME_NCCH)
@@ -1478,7 +1478,7 @@ u32 BuildCiaFromGameFile(const char* path, bool force_legit) {
     else if (filetype & GAME_NCSD)
         ret = BuildCiaFromNcsdFile(path, dest);
     else ret = 1;
-	setBGOperationRunning(false);
+	FinishTask();
     
     if (ret != 0) // try to get rid of the borked file
         f_unlink(dest);
@@ -1502,8 +1502,8 @@ u32 DumpCxiSrlFromTmdFile(const char* path) {
         return 1;
         
     // get path to CXI/SRL and decrypt (if encrypted)
-	setBGOperationRunning(true);
-	setCurrentOperationId(OPERATION_EXTRACT);
+	StartTask();
+	SetCurrentTaskStr("Extracting");
     if ((strncmp(path + 1, ":/title/", 8) != 0) ||
         (GetTmdContentPath(path_cxi, path) != 0) ||
         (!((filetype = IdentifyFileType(path_cxi)) & (GAME_NCCH|GAME_NDS))) ||
@@ -1512,7 +1512,7 @@ u32 DumpCxiSrlFromTmdFile(const char* path) {
         if (*dname) fvx_unlink(dest);
         return 1;
     }
-	setBGOperationRunning(false);
+	FinishTask();
     
     return 0;
 }
@@ -1805,8 +1805,8 @@ u32 BuildNcchInfoXorpads(const char* destdir, const char* path) {
         if (FixNcchInfoEntry(&entry, version) != 0) ret = 1;
         if (ret != 0) break;
         
-		setBGOperationRunning(true);
-		setCurrentOperationId(OPERATION_BUILD);
+		StartTask();
+		SetCurrentTaskStr("Building Xorpads");
         char dest[256]; // 256 is the maximum length of a full path
         snprintf(dest, 256, "%s/%s", destdir, entry.filename);
         if (fvx_open(&fp_xorpad, dest, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
@@ -1819,7 +1819,7 @@ u32 BuildNcchInfoXorpads(const char* destdir, const char* path) {
             }
             fvx_close(&fp_xorpad);
         } else ret = 1;
-		setBGOperationRunning(false);
+		FinishTask();
         if (ret != 0) f_unlink(dest); // get rid of the borked file
     }
     
@@ -1921,8 +1921,8 @@ u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
     } else f_unlink(path_cxi);
     
     // copy / decrypt the source CXI
-	setBGOperationRunning(true);
-	setCurrentOperationId(OPERATION_INJECT);
+	StartTask();
+	SetCurrentTaskStr("Injecting H&S");
     u32 ret = 0;
     if (CryptNcchNcsdBossFirmFile(path, path_cxi, GAME_NCCH, CRYPTO_DECRYPT, 0, 0, NULL, NULL) != 0)
         ret = 1;
@@ -1952,7 +1952,7 @@ u32 InjectHealthAndSafety(const char* path, const char* destdrv) {
         f_rename(path_bak, path_cxi);
     }
     
-	setBGOperationRunning(false);
+	FinishTask();
     return ret;
 }
 
