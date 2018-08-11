@@ -235,7 +235,7 @@ u32 InjectGbaVcSavegame(const char* path, const char* path_vcsave) {
 
 u32 RebuildNandNcsdHeader(NandNcsdHeader* ncsd) {
     // signature (retail or dev)
-    u8* signature = (IS_DEVKIT) ? sig_nand_ncsd_dev : sig_nand_ncsd_retail;
+    const u8* signature = (IS_DEVKIT) ? sig_nand_ncsd_dev : sig_nand_ncsd_retail;
     
     // encrypted TWL MBR
     u8 twl_mbr_data[0x200] = { 0 };
@@ -553,7 +553,7 @@ u32 SafeInstallFirmBuffered(const char* path, u32 slots, u8* buffer, u32 bufsiz)
     }
     
     // all checked, ready to go
-    if (!ShowUnlockSequence(6, "!WARNING!\n \nProceeding will install the\nprovided FIRM to the SysNAND.\n \nInstalling an unsupported FIRM\nwill BRICK your console!")) return 1;
+    if (!ShowUnlockSequence(6, "!WARNING!\n \nProceeding will install the\nprovided FIRM to the SysNAND\nand inject sighax.\n \nInstalling an unsupported FIRM\nwill BRICK your console!")) return 1;
     // if (!SetWritePermissions(PERM_SYS_LVL3, true)) return 1; // one unlock sequence is enough
     
     // point of no return

@@ -375,14 +375,15 @@ bool FileCreateDummy(const char* cpath, const char* filename, u64 size) {
     f_sync(&dfile);
     fx_close(&dfile);
     
-    return true;
+    return (fa_stat(npath, NULL) == FR_OK);
 }
 
 bool DirCreate(const char* cpath, const char* dirname) {
     char npath[256]; // 256 is the maximum length of a full path
     if (!CheckWritePermissions(cpath)) return false;
     snprintf(npath, 255, "%s/%s", cpath, dirname);
-    return (fa_mkdir(npath) == FR_OK);
+    if (fa_mkdir(npath) != FR_OK) return false;
+    return (fa_stat(npath, NULL) == FR_OK);
 }
 
 bool DirInfoWorker(char* fpath, bool virtual, u64* tsize, u32* tdirs, u32* tfiles) {
@@ -536,7 +537,7 @@ bool PathMoveCopyRec(char* dest, char* orig, u32* flags, bool move, u8* buffer, 
         
         ret = true; // destination file exists by now, so we need to handle deletion
         fsize = fvx_size(&ofile); // check space via cluster preallocation
-        if ((fvx_lseek(&dfile, fsize) != FR_OK) || (fvx_sync(&dfile) != FR_OK)) {
+        if ((fvx_lseek(&dfile, fsize) != FR_OK) || (fvx_sync(&dfile) != FR_OK) || (fvx_tell(&dfile) != fsize)) {
             if (!silent) ShowPrompt(false, "%s\nError: Not enough space available", deststr);
             ret = false;
         }
@@ -786,7 +787,9 @@ bool PathRename(const char* path, const char* newname) {
     strncpy(npath, path, oldname - path);
     strncpy(npath + (oldname - path), newname, 255 - (oldname - path));
     
-    return (f_rename(path, npath) == FR_OK);
+    if (fvx_rename(path, npath) != FR_OK) return false;
+    if ((fvx_stat(path, NULL) == FR_OK) || (fvx_stat(npath, NULL) != FR_OK)) return false; // safety check
+    return true;
 }
 
 bool PathAttr(const char* path, u8 attr, u8 mask) {
